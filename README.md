@@ -10,7 +10,7 @@
 
 ## Платье
 
-`dress.glb` — CC0 MakeHuman halter knee (MargaretToigo). Размеры 42–54.
+`dress.glb` — CC0 MakeHuman halter knee (MargaretToigo). Размеры 42–64 (urban-s / ГОСТ-сводка); автоподбор «ваш размер».
 Переключатель «Без одежды / В платье». Текст посадки по зонам.
 
 ## Карточка товара
