@@ -17,80 +17,45 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: #FAF9F4;
-      color: #33322A;
+      width: 100%; height: 100%; overflow: hidden;
+      background: #FAF9F4; color: #33322A;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       font-size: 14px;
       -webkit-tap-highlight-color: transparent;
       touch-action: none;
     }
-    #canvas-wrap {
-      position: absolute;
-      inset: 0 0 210px 0;
-    }
+    #canvas-wrap { position: absolute; inset: 0 0 210px 0; }
     canvas { display: block; width: 100%; height: 100%; }
     #hud {
-      position: absolute;
-      top: 8px;
-      left: 8px;
-      right: 8px;
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      pointer-events: none;
-      z-index: 2;
-      gap: 8px;
+      position: absolute; top: 8px; left: 8px; right: 8px;
+      display: flex; justify-content: space-between; align-items: flex-start;
+      pointer-events: none; z-index: 2; gap: 8px;
     }
     #fps, #size-info {
-      background: #FAF9F4;
-      border: 1px solid #33322A;
-      padding: 6px 10px;
-      line-height: 1.35;
+      background: #FAF9F4; border: 1px solid #33322A;
+      padding: 6px 10px; line-height: 1.35;
     }
     #controls {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      height: 210px;
-      padding: 10px 14px 14px;
-      background: #FAF9F4;
-      border-top: 1px solid #33322A;
-      overflow-y: auto;
-      z-index: 3;
+      position: absolute; left: 0; right: 0; bottom: 0; height: 210px;
+      padding: 10px 14px 14px; background: #FAF9F4;
+      border-top: 1px solid #33322A; overflow-y: auto; z-index: 3;
       touch-action: pan-y;
     }
     .row {
-      display: grid;
-      grid-template-columns: 118px 1fr 48px;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 8px;
+      display: grid; grid-template-columns: 118px 1fr 48px;
+      align-items: center; gap: 8px; margin-bottom: 8px;
     }
     label { white-space: nowrap; }
-    input[type="range"] {
-      width: 100%;
-      accent-color: #33322A;
-    }
+    input[type="range"] { width: 100%; accent-color: #33322A; }
     .val { text-align: right; font-variant-numeric: tabular-nums; }
-    #status {
-      margin-top: 4px;
-      opacity: 0.75;
-      font-size: 12px;
-    }
+    #status { margin-top: 4px; opacity: 0.75; font-size: 12px; }
   </style>
 </head>
 <body>
   <div id="canvas-wrap"></div>
   <div id="hud">
     <div id="fps">Кадров в секунду: —</div>
-    <div id="size-info">
-      Размер РФ: —<br />
-      Ростовка: —
-    </div>
+    <div id="size-info">Размер РФ: —<br />Ростовка: —</div>
   </div>
   <div id="controls">
     <div class="row">
@@ -113,7 +78,7 @@
       <input id="byodra" type="range" min="84" max="136" step="1" value="100" />
       <span class="val" id="byodra-val">100</span>
     </div>
-    <div id="status">Манекен готов. Крутите пальцем, двигайте ползунки.</div>
+    <div id="status">Загрузка манекена…</div>
   </div>
 
   <script>
@@ -124,6 +89,12 @@
   <script type="module">
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+    // Базовые мерки «средней» фигуры, под которую собран меш
+    const REF = { rost: 164, grud: 92, taliya: 74, byodra: 100 };
+    const MIN = { rost: 150, grud: 76, taliya: 56, byodra: 84 };
+    const MAX = { rost: 190, grud: 130, taliya: 120, byodra: 136 };
 
     const el = {
       rost: document.getElementById('rost'),
@@ -140,16 +111,10 @@
       wrap: document.getElementById('canvas-wrap'),
     };
 
-    /** Размер РФ по обхвату груди: размер ≈ обхват груди / 2, чётный. */
-    function razmerRF(grudCm) {
-      return Math.round(grudCm / 4) * 2;
-    }
-
-    /** Ростовка: ближайшая из типовых 152–182 (ГОСТ Р 52774). */
+    function razmerRF(grudCm) { return Math.round(grudCm / 4) * 2; }
     const ROSTOVKI = [152, 158, 164, 170, 176, 182];
     function rostovka(rostCm) {
-      let best = ROSTOVKI[0];
-      let bestDiff = Math.abs(rostCm - best);
+      let best = ROSTOVKI[0], bestDiff = Math.abs(rostCm - best);
       for (const r of ROSTOVKI) {
         const d = Math.abs(rostCm - r);
         if (d < bestDiff) { best = r; bestDiff = d; }
@@ -157,203 +122,68 @@
       return best;
     }
 
-    /** Обхват в см → радиус в метрах (круг: C = 2πr). */
-    function cmToRadius(cm) {
-      return (cm / 100) / (2 * Math.PI);
-    }
-
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xFAF9F4);
 
     const camera = new THREE.PerspectiveCamera(35, 1, 0.05, 50);
-    camera.position.set(0, 1.05, 2.45);
+    camera.position.set(0, 1.0, 2.5);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     el.wrap.appendChild(renderer.domElement);
 
-    const hemi = new THREE.HemisphereLight(0xffffff, 0xc9c4b8, 1.15);
-    scene.add(hemi);
-    const dir = new THREE.DirectionalLight(0xffffff, 0.7);
-    dir.position.set(1.8, 3.5, 2.2);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xc9c4b8, 1.05));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.75);
+    dir.position.set(1.6, 3.2, 2.0);
     scene.add(dir);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.25);
+    fill.position.set(-2.0, 1.5, -1.0);
+    scene.add(fill);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.target.set(0, 0.9, 0);
-    controls.minDistance = 1.1;
+    controls.minDistance = 1.0;
     controls.maxDistance = 4.5;
     controls.maxPolarAngle = Math.PI * 0.92;
     controls.enablePan = false;
     controls.enableRotate = true;
     controls.enableZoom = true;
-    // Полный круг по горизонтали (как раньше на iPhone)
     controls.minAzimuthAngle = -Infinity;
     controls.maxAzimuthAngle = Infinity;
 
-    // Матовый манекен портновского типа, без текстур и лица
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0xc8c2b4,
-      roughness: 0.92,
-      metalness: 0.0,
-      flatShading: false,
-    });
+    const root = new THREE.Group();
+    scene.add(root);
 
-    const mannequin = new THREE.Group();
-    scene.add(mannequin);
+    let mesh = null;
+    let morphIndex = {};
 
-    // Части, которые пересобираем при смене мерок
-    let torsoMesh = null;
-    const limbs = {
-      head: null,
-      neck: null,
-      leftArm: null,
-      rightArm: null,
-      leftLeg: null,
-      rightLeg: null,
-      leftFoot: null,
-      rightFoot: null,
-    };
-
-    function disposeMesh(mesh) {
-      if (!mesh) return;
-      mesh.geometry.dispose();
-      mannequin.remove(mesh);
-    }
-
-    function makeCapsule(radius, length, radialSegs = 12) {
-      // CapsuleGeometry: радиус и длина цилиндрической части
-      const geo = new THREE.CapsuleGeometry(radius, Math.max(0.01, length), 6, radialSegs);
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.castShadow = false;
-      mesh.receiveShadow = false;
-      return mesh;
-    }
-
-    function buildTorso(rChest, rWaist, rHips, torsoH) {
-      disposeMesh(torsoMesh);
-      // Профиль Lathe: x = радиус, y = высота от низа торса (бёдра) вверх
-      // Низ = бёдра, середина = талия, верх груди, плечи чуть уже груди
-      const rShoulder = rChest * 0.92;
-      const rNeckBase = Math.min(rChest * 0.42, 0.06);
-      const yHips = 0;
-      const yWaist = torsoH * 0.38;
-      const yChest = torsoH * 0.72;
-      const yShoulder = torsoH * 0.92;
-      const yNeck = torsoH;
-
-      const pts = [
-        new THREE.Vector2(rHips * 0.55, yHips - torsoH * 0.02),
-        new THREE.Vector2(rHips, yHips + torsoH * 0.06),
-        new THREE.Vector2(rHips * 0.98, yHips + torsoH * 0.14),
-        new THREE.Vector2((rHips + rWaist) * 0.5, (yHips + yWaist) * 0.55),
-        new THREE.Vector2(rWaist, yWaist),
-        new THREE.Vector2((rWaist + rChest) * 0.5, (yWaist + yChest) * 0.55),
-        new THREE.Vector2(rChest, yChest),
-        new THREE.Vector2(rShoulder, yShoulder),
-        new THREE.Vector2(rNeckBase, yNeck),
-      ];
-      const geo = new THREE.LatheGeometry(pts, 48);
-      torsoMesh = new THREE.Mesh(geo, mat);
-      torsoMesh.castShadow = false;
-      torsoMesh.receiveShadow = false;
-      mannequin.add(torsoMesh);
-      return { yHips, yWaist, yChest, yShoulder, yNeck, torsoH, rChest, rWaist, rHips, rShoulder, rNeckBase };
-    }
-
-    // Более чистая пересборка: полностью очищаем группу
-    function clearMannequin() {
-      while (mannequin.children.length) {
-        const ch = mannequin.children[0];
-        mannequin.remove(ch);
-        if (ch.geometry) ch.geometry.dispose();
+    function setBidirectional(incrName, decrName, value, ref, minV, maxV) {
+      if (!mesh || !mesh.morphTargetInfluences) return;
+      const ii = morphIndex[incrName];
+      const di = morphIndex[decrName];
+      let incr = 0, decr = 0;
+      if (value >= ref) {
+        incr = (value - ref) / Math.max(1e-6, maxV - ref);
+      } else {
+        decr = (ref - value) / Math.max(1e-6, ref - minV);
       }
-      torsoMesh = null;
-      Object.keys(limbs).forEach((k) => { limbs[k] = null; });
-    }
-
-    function rebuildClean(rostCm, grudCm, taliyaCm, byodraCm) {
-      clearMannequin();
-      mannequin.position.set(0, 0, 0);
-
-      const H = rostCm / 100;
-      const headR = H * 0.055;
-      const neckLen = H * 0.04;
-      const torsoH = H * 0.33;
-      const legLen = H * 0.47;
-      const armLen = H * 0.35;
-      const footLen = H * 0.045;
-
-      const rChest = cmToRadius(grudCm);
-      const rWaist = cmToRadius(taliyaCm);
-      const rHips = cmToRadius(byodraCm);
-      const armR = Math.max(0.022, rChest * 0.2);
-      const thighR = Math.max(0.032, rHips * 0.36);
-      const calfR = thighR * 0.7;
-
-      const layout = buildTorso(rChest, rWaist, rHips, torsoH);
-      const hipY = legLen;
-      torsoMesh.position.y = hipY;
-
-      const neck = makeCapsule(Math.max(0.02, layout.rNeckBase * 0.9), Math.max(0.02, neckLen * 0.5), 10);
-      neck.position.y = hipY + torsoH + neckLen * 0.4;
-      mannequin.add(neck);
-
-      const head = new THREE.Mesh(new THREE.SphereGeometry(headR, 24, 18), mat);
-      head.position.y = hipY + torsoH + neckLen + headR * 0.8;
-      mannequin.add(head);
-
-      const shoulderY = hipY + layout.yShoulder;
-      const shoulderX = layout.rShoulder;
-      const aPose = THREE.MathUtils.degToRad(26);
-
-      ['left', 'right'].forEach((side) => {
-        const s = side === 'left' ? -1 : 1;
-        const arm = makeCapsule(armR, Math.max(0.05, armLen - armR * 2), 10);
-        // Позиция плеча
-        const pivot = new THREE.Group();
-        pivot.position.set(s * shoulderX, shoulderY, 0);
-        pivot.rotation.z = s * aPose;
-        arm.position.y = -(armLen * 0.5);
-        pivot.add(arm);
-        mannequin.add(pivot);
-      });
-
-      ['left', 'right'].forEach((side) => {
-        const s = side === 'left' ? -1 : 1;
-        const hipOffset = rHips * 0.4;
-        const thigh = makeCapsule(thighR, Math.max(0.05, legLen * 0.5), 12);
-        thigh.position.set(s * hipOffset, hipY - legLen * 0.28, 0);
-        mannequin.add(thigh);
-
-        const calf = makeCapsule(calfR, Math.max(0.05, legLen * 0.4), 12);
-        calf.position.set(s * hipOffset, hipY - legLen * 0.72, 0);
-        mannequin.add(calf);
-
-        const foot = new THREE.Mesh(
-          new THREE.CapsuleGeometry(calfR * 0.8, Math.max(0.02, footLen), 4, 8),
-          mat
-        );
-        foot.rotation.x = Math.PI / 2;
-        foot.position.set(s * hipOffset, calfR * 0.85, footLen * 0.4);
-        mannequin.add(foot);
-      });
-
-      mannequin.updateMatrixWorld(true);
-      const box = new THREE.Box3().setFromObject(mannequin);
-      mannequin.position.y -= box.min.y;
-
-      // Цель камеры на середину фигуры
-      const box2 = new THREE.Box3().setFromObject(mannequin);
-      const mid = new THREE.Vector3();
-      box2.getCenter(mid);
-      controls.target.set(0, mid.y, 0);
+      incr = Math.max(0, Math.min(1.0, incr));
+      decr = Math.max(0, Math.min(1.0, decr));
+      if (ii != null) mesh.morphTargetInfluences[ii] = incr;
+      if (di != null) mesh.morphTargetInfluences[di] = decr;
     }
 
     function applyProportions(rost, grud, taliya, byodra) {
-      rebuildClean(rost, grud, taliya, byodra);
+      if (!mesh) return;
+      setBidirectional('chestIncr', 'chestDecr', grud, REF.grud, MIN.grud, MAX.grud);
+      setBidirectional('waistIncr', 'waistDecr', taliya, REF.taliya, MIN.taliya, MAX.taliya);
+      setBidirectional('hipsIncr', 'hipsDecr', byodra, REF.byodra, MIN.byodra, MAX.byodra);
+      // Дополнительно лёгкий общий масштаб по росту, чтобы 150…190 было очевидно
+      const s = rost / REF.rost;
+      root.scale.setScalar(s);
     }
 
     function updateLabels() {
@@ -365,8 +195,7 @@
       el.grudVal.textContent = String(grud);
       el.taliyaVal.textContent = String(taliya);
       el.byodraVal.textContent = String(byodra);
-      el.sizeInfo.innerHTML =
-        'Размер РФ: ' + razmerRF(grud) + '<br />Ростовка: ' + rostovka(rost);
+      el.sizeInfo.innerHTML = 'Размер РФ: ' + razmerRF(grud) + '<br />Ростовка: ' + rostovka(rost);
       applyProportions(rost, grud, taliya, byodra);
     }
 
@@ -384,17 +213,64 @@
       el[id].addEventListener('input', updateLabels);
     });
 
-    // Для скриншотов из CDP
     window.__setMeasures = (rost, grud, taliya, byodra) => {
-      el.rost.value = rost;
-      el.grud.value = grud;
-      el.taliya.value = taliya;
-      el.byodra.value = byodra;
+      el.rost.value = rost; el.grud.value = grud;
+      el.taliya.value = taliya; el.byodra.value = byodra;
       updateLabels();
     };
 
-    let frames = 0;
-    let lastFps = performance.now();
+    const loader = new GLTFLoader();
+    loader.load('./body.glb', (gltf) => {
+      const model = gltf.scene;
+      model.traverse((o) => {
+        if (o.isMesh && o.morphTargetInfluences) {
+          mesh = o;
+          o.castShadow = false;
+          o.receiveShadow = false;
+          // Матовый манекен
+          o.material = new THREE.MeshStandardMaterial({
+            color: 0xc8c2b4,
+            roughness: 0.88,
+            metalness: 0.0,
+            morphTargets: true,
+            flatShading: false,
+          });
+          // Имена морфов
+          const dict = o.morphTargetDictionary || {};
+          morphIndex = { ...dict };
+          if (!Object.keys(morphIndex).length && o.morphTargetInfluences) {
+            const names = (o.userData && o.userData.targetNames) ||
+              (gltf.parser && []) ||
+              ['chestIncr','chestDecr','waistIncr','waistDecr','hipsIncr','hipsDecr','heightIncr','heightDecr'];
+            names.forEach((n, i) => { morphIndex[n] = i; });
+          }
+        }
+      });
+
+      // targetNames often on mesh extras via GLTFLoader -> morphTargetDictionary
+      if (mesh && mesh.morphTargetDictionary) {
+        morphIndex = { ...mesh.morphTargetDictionary };
+      }
+
+      root.add(model);
+      root.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(root);
+      root.position.y -= box.min.y;
+      const box2 = new THREE.Box3().setFromObject(root);
+      const mid = new THREE.Vector3();
+      box2.getCenter(mid);
+      controls.target.set(0, mid.y * 0.92, 0);
+      camera.position.set(0, mid.y * 0.95, 2.4);
+
+      el.status.textContent = 'Крутите фигуру пальцем. Ползунки меняют мерки.';
+      console.log('morphs', morphIndex);
+      updateLabels();
+    }, undefined, (err) => {
+      console.error(err);
+      el.status.textContent = 'Не удалось загрузить манекен.';
+    });
+
+    let frames = 0, lastFps = performance.now();
     function animate() {
       requestAnimationFrame(animate);
       controls.update();
@@ -402,14 +278,11 @@
       frames++;
       const now = performance.now();
       if (now - lastFps >= 500) {
-        const fps = Math.round((frames * 1000) / (now - lastFps));
-        el.fps.textContent = 'Кадров в секунду: ' + fps;
-        frames = 0;
-        lastFps = now;
+        el.fps.textContent = 'Кадров в секунду: ' + Math.round((frames * 1000) / (now - lastFps));
+        frames = 0; lastFps = now;
       }
     }
     animate();
-    updateLabels();
   </script>
 </body>
 </html>
