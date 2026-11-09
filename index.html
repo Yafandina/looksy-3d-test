@@ -24,7 +24,7 @@
       -webkit-tap-highlight-color: transparent;
       touch-action: none;
     }
-    #canvas-wrap { position: absolute; inset: 0 0 210px 0; }
+    #canvas-wrap { position: absolute; inset: 0 0 280px 0; }
     canvas { display: block; width: 100%; height: 100%; }
     #hud {
       position: absolute; top: 8px; left: 8px; right: 8px;
@@ -36,19 +36,19 @@
       padding: 6px 10px; line-height: 1.35;
     }
     #controls {
-      position: absolute; left: 0; right: 0; bottom: 0; height: 210px;
-      padding: 10px 14px 14px; background: #FAF9F4;
+      position: absolute; left: 0; right: 0; bottom: 0; height: 280px;
+      padding: 10px 14px 12px; background: #FAF9F4;
       border-top: 1px solid #33322A; overflow-y: auto; z-index: 3;
       touch-action: pan-y;
     }
     .row {
-      display: grid; grid-template-columns: 118px 1fr 48px;
-      align-items: center; gap: 8px; margin-bottom: 8px;
+      display: grid; grid-template-columns: 130px 1fr 44px;
+      align-items: center; gap: 8px; margin-bottom: 7px;
     }
-    label { white-space: nowrap; }
+    label { white-space: nowrap; font-size: 13px; }
     input[type="range"] { width: 100%; accent-color: #33322A; }
     .val { text-align: right; font-variant-numeric: tabular-nums; }
-    #status { margin-top: 4px; opacity: 0.75; font-size: 12px; }
+    #status { margin-top: 2px; opacity: 0.75; font-size: 12px; }
   </style>
 </head>
 <body>
@@ -69,9 +69,19 @@
       <span class="val" id="grud-val">92</span>
     </div>
     <div class="row">
+      <label for="podgrud">Обхват под грудью, см</label>
+      <input id="podgrud" type="range" min="60" max="110" step="1" value="80" />
+      <span class="val" id="podgrud-val">80</span>
+    </div>
+    <div class="row">
       <label for="taliya">Обхват талии, см</label>
       <input id="taliya" type="range" min="56" max="120" step="1" value="74" />
       <span class="val" id="taliya-val">74</span>
+    </div>
+    <div class="row">
+      <label for="zhivot">Обхват живота, см</label>
+      <input id="zhivot" type="range" min="60" max="130" step="1" value="80" />
+      <span class="val" id="zhivot-val">80</span>
     </div>
     <div class="row">
       <label for="byodra">Обхват бёдер, см</label>
@@ -91,19 +101,25 @@
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-    // Базовые мерки «средней» фигуры, под которую собран меш
-    const REF = { rost: 164, grud: 92, taliya: 74, byodra: 100 };
-    const MIN = { rost: 150, grud: 76, taliya: 56, byodra: 84 };
-    const MAX = { rost: 190, grud: 130, taliya: 120, byodra: 136 };
+    const REF = {
+      rost: 164, grud: 92, podgrud: 80, taliya: 74, zhivot: 80, byodra: 100,
+      breastDelta: 12, // grud - podgrud
+    };
+    const MIN = { rost: 150, grud: 76, podgrud: 60, taliya: 56, zhivot: 60, byodra: 84 };
+    const MAX = { rost: 190, grud: 130, podgrud: 110, taliya: 120, zhivot: 130, byodra: 136 };
 
     const el = {
       rost: document.getElementById('rost'),
       grud: document.getElementById('grud'),
+      podgrud: document.getElementById('podgrud'),
       taliya: document.getElementById('taliya'),
+      zhivot: document.getElementById('zhivot'),
       byodra: document.getElementById('byodra'),
       rostVal: document.getElementById('rost-val'),
       grudVal: document.getElementById('grud-val'),
+      podgrudVal: document.getElementById('podgrud-val'),
       taliyaVal: document.getElementById('taliya-val'),
+      zhivotVal: document.getElementById('zhivot-val'),
       byodraVal: document.getElementById('byodra-val'),
       fps: document.getElementById('fps'),
       sizeInfo: document.getElementById('size-info'),
@@ -124,10 +140,8 @@
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xFAF9F4);
-
     const camera = new THREE.PerspectiveCamera(35, 1, 0.05, 50);
     camera.position.set(0, 1.0, 2.5);
-
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -160,48 +174,57 @@
     let mesh = null;
     let morphIndex = {};
 
-    function setBidirectional(incrName, decrName, value, ref, minV, maxV) {
+    function setBi(incrName, decrName, value, ref, minV, maxV) {
       if (!mesh || !mesh.morphTargetInfluences) return;
       const ii = morphIndex[incrName];
       const di = morphIndex[decrName];
       let incr = 0, decr = 0;
-      if (value >= ref) {
-        incr = (value - ref) / Math.max(1e-6, maxV - ref);
-      } else {
-        decr = (ref - value) / Math.max(1e-6, ref - minV);
-      }
-      incr = Math.max(0, Math.min(1.0, incr));
-      decr = Math.max(0, Math.min(1.0, decr));
+      if (value >= ref) incr = (value - ref) / Math.max(1e-6, maxV - ref);
+      else decr = (ref - value) / Math.max(1e-6, ref - minV);
+      incr = Math.max(0, Math.min(1, incr));
+      decr = Math.max(0, Math.min(1, decr));
       if (ii != null) mesh.morphTargetInfluences[ii] = incr;
       if (di != null) mesh.morphTargetInfluences[di] = decr;
     }
 
-    function applyProportions(rost, grud, taliya, byodra) {
+    function applyProportions(rost, grud, podgrud, taliya, zhivot, byodra) {
       if (!mesh) return;
-      setBidirectional('chestIncr', 'chestDecr', grud, REF.grud, MIN.grud, MAX.grud);
-      setBidirectional('waistIncr', 'waistDecr', taliya, REF.taliya, MIN.taliya, MAX.taliya);
-      setBidirectional('hipsIncr', 'hipsDecr', byodra, REF.byodra, MIN.byodra, MAX.byodra);
-      // Дополнительно лёгкий общий масштаб по росту, чтобы 150…190 было очевидно
-      const s = rost / REF.rost;
-      root.scale.setScalar(s);
+      // Грудь: объём/проекция от разницы грудь − под грудью (+ сам обхват груди)
+      const breastDelta = Math.max(0, grud - podgrud);
+      const breastDeltaMax = Math.max(8, MAX.grud - MIN.podgrud);
+      setBi('breastIncr', 'breastDecr', breastDelta, REF.breastDelta, 4, Math.min(28, breastDeltaMax));
+      // Под грудью — каркас/рибкейдж
+      setBi('underbustIncr', 'underbustDecr', podgrud, REF.podgrud, MIN.podgrud, MAX.podgrud);
+      setBi('waistIncr', 'waistDecr', taliya, REF.taliya, MIN.taliya, MAX.taliya);
+      setBi('bellyIncr', 'bellyDecr', zhivot, REF.zhivot, MIN.zhivot, MAX.zhivot);
+      setBi('hipsIncr', 'hipsDecr', byodra, REF.byodra, MIN.byodra, MAX.byodra);
+      root.scale.setScalar(rost / REF.rost);
     }
 
     function updateLabels() {
+      // Не даём подгрудному обхвату быть больше груди
+      if (+el.podgrud.value > +el.grud.value - 4) {
+        el.podgrud.value = String(Math.max(MIN.podgrud, +el.grud.value - 4));
+      }
       const rost = +el.rost.value;
       const grud = +el.grud.value;
+      const podgrud = +el.podgrud.value;
       const taliya = +el.taliya.value;
+      const zhivot = +el.zhivot.value;
       const byodra = +el.byodra.value;
       el.rostVal.textContent = String(rost);
       el.grudVal.textContent = String(grud);
+      el.podgrudVal.textContent = String(podgrud);
       el.taliyaVal.textContent = String(taliya);
+      el.zhivotVal.textContent = String(zhivot);
       el.byodraVal.textContent = String(byodra);
       el.sizeInfo.innerHTML = 'Размер РФ: ' + razmerRF(grud) + '<br />Ростовка: ' + rostovka(rost);
-      applyProportions(rost, grud, taliya, byodra);
+      applyProportions(rost, grud, podgrud, taliya, zhivot, byodra);
     }
 
     function resize() {
       const w = el.wrap.clientWidth || window.innerWidth;
-      const h = el.wrap.clientHeight || Math.max(200, window.innerHeight - 210);
+      const h = el.wrap.clientHeight || Math.max(200, window.innerHeight - 280);
       camera.aspect = w / Math.max(1, h);
       camera.updateProjectionMatrix();
       renderer.setSize(w, h, false);
@@ -209,49 +232,34 @@
     window.addEventListener('resize', resize);
     resize();
 
-    ['rost', 'grud', 'taliya', 'byodra'].forEach((id) => {
+    ['rost', 'grud', 'podgrud', 'taliya', 'zhivot', 'byodra'].forEach((id) => {
       el[id].addEventListener('input', updateLabels);
     });
 
-    window.__setMeasures = (rost, grud, taliya, byodra) => {
-      el.rost.value = rost; el.grud.value = grud;
-      el.taliya.value = taliya; el.byodra.value = byodra;
+    window.__setMeasures = (rost, grud, podgrud, taliya, zhivot, byodra) => {
+      el.rost.value = rost; el.grud.value = grud; el.podgrud.value = podgrud;
+      el.taliya.value = taliya; el.zhivot.value = zhivot; el.byodra.value = byodra;
       updateLabels();
     };
 
-    const loader = new GLTFLoader();
-    loader.load('./body.glb', (gltf) => {
+    new GLTFLoader().load('./body.glb', (gltf) => {
       const model = gltf.scene;
       model.traverse((o) => {
         if (o.isMesh && o.morphTargetInfluences) {
           mesh = o;
           o.castShadow = false;
           o.receiveShadow = false;
-          // Матовый манекен
           o.material = new THREE.MeshStandardMaterial({
-            color: 0xc8c2b4,
-            roughness: 0.88,
-            metalness: 0.0,
-            morphTargets: true,
-            flatShading: false,
+            color: 0xc8c2b4, roughness: 0.88, metalness: 0.0,
+            morphTargets: true, flatShading: false,
           });
-          // Имена морфов
-          const dict = o.morphTargetDictionary || {};
-          morphIndex = { ...dict };
-          if (!Object.keys(morphIndex).length && o.morphTargetInfluences) {
-            const names = (o.userData && o.userData.targetNames) ||
-              (gltf.parser && []) ||
-              ['chestIncr','chestDecr','waistIncr','waistDecr','hipsIncr','hipsDecr','heightIncr','heightDecr'];
+          morphIndex = { ...(o.morphTargetDictionary || {}) };
+          if (!Object.keys(morphIndex).length) {
+            const names = ['breastIncr','breastDecr','underbustIncr','underbustDecr','waistIncr','waistDecr','bellyIncr','bellyDecr','hipsIncr','hipsDecr'];
             names.forEach((n, i) => { morphIndex[n] = i; });
           }
         }
       });
-
-      // targetNames often on mesh extras via GLTFLoader -> morphTargetDictionary
-      if (mesh && mesh.morphTargetDictionary) {
-        morphIndex = { ...mesh.morphTargetDictionary };
-      }
-
       root.add(model);
       root.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(root);
@@ -261,7 +269,6 @@
       box2.getCenter(mid);
       controls.target.set(0, mid.y * 0.92, 0);
       camera.position.set(0, mid.y * 0.95, 2.4);
-
       el.status.textContent = 'Крутите фигуру пальцем. Ползунки меняют мерки.';
       console.log('morphs', morphIndex);
       updateLabels();
