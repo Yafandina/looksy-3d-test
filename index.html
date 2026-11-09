@@ -505,23 +505,27 @@
     }
 
     /** Подбор размера по груди/талии/бёдрам из активной сетки. */
+    // Размер = max(размер по груди, по талии, по бёдрам): первая строка сетки, куда мерка входит.
+    function sizeForZone(bodyCm, key) {
+      const sizes = Object.keys(activeChart).map(Number).sort((a, b) => a - b);
+      for (const sz of sizes) {
+        if (bodyCm <= activeChart[sz][key]) return sz;
+      }
+      return sizes.length ? sizes[sizes.length - 1] : 46;
+    }
     function recommendSizeFromBody(grud, taliya, byodra) {
       const sizes = Object.keys(activeChart).map(Number).sort((a, b) => a - b);
       if (!sizes.length) return { size: 46, outside: true };
-      let best = sizes[0], bestScore = Infinity;
-      for (const sz of sizes) {
-        const g = activeChart[sz];
-        const excess = Math.max(0, grud - g.grud) + Math.max(0, taliya - g.taliya) + Math.max(0, byodra - g.byodra);
-        const waste = Math.max(0, g.grud - grud) + Math.max(0, g.taliya - taliya) + Math.max(0, g.byodra - byodra);
-        const score = excess > 0 ? 10000 + excess * 10 : waste;
-        if (score < bestScore) { bestScore = score; best = sz; }
-      }
+      const sGrud = sizeForZone(grud, 'grud');
+      const sTaliya = sizeForZone(taliya, 'taliya');
+      const sByodra = sizeForZone(byodra, 'byodra');
+      const best = Math.max(sGrud, sTaliya, sByodra);
       const minSz = sizes[0], maxSz = sizes[sizes.length - 1];
       const gmin = activeChart[minSz], gmax = activeChart[maxSz];
       const outside =
         grud > gmax.grud || taliya > gmax.taliya || byodra > gmax.byodra ||
         grud < gmin.grud - 6 || taliya < gmin.taliya - 6 || byodra < gmin.byodra - 6;
-      return { size: best, outside };
+      return { size: best, outside, zones: { grud: sGrud, taliya: sTaliya, byodra: sByodra } };
     }
 
     function renderChartTable() {
@@ -565,7 +569,7 @@
     rebuildSizeButtons();
     renderChartTable();
 
-    function razmerRF(grudCm) { return Math.round(grudCm / 4) * 2; }
+    // Размер РФ в оверлее = та же рекомендация, что и для платья (max по зонам).
     // Типовые ростовки женской одежды (шаг 6 см), верх сетки — 182.
     const ROSTOVKI = [152, 158, 164, 170, 176, 182];
     function rostovka(rostCm) {
@@ -691,80 +695,121 @@
       if (ii != null) mesh.morphTargetInfluences[ii] = incr;
       if (di != null) mesh.morphTargetInfluences[di] = decr;
     }
-    function clearSizeMorphs() {
-      if (!dressMesh) return;
-      Object.keys(dressMorph).forEach((k) => {
-        if (k.startsWith('size')) dressMesh.morphTargetInfluences[dressMorph[k]] = 0;
-      });
+    // --- Платье следует поверхности тела по нормали (bind MHCLO), не «фартук» ---
+    let dressBind = null; // {binds, gap, tang, bodyHeight, refCm}
+    let dressRestPos = null; // Float32Array rest positions
+    let bodyRestPos = null; // Float32Array body rest positions
+    let bodyIndexArr = null; // Uint16/32 face indices for normal compute
+
+
+    function circCmToRadial(cm) {
+      const unit = (dressBind ? dressBind.bodyHeight / dressBind.refCm : 0.0098);
+      return (cm * unit) / (2 * Math.PI);
     }
-    function resetDressBodyMorphs() {
-      if (!dressMesh) return;
-      BODY_MORPHS.forEach((n) => {
-        const i = dressMorph[n];
-        if (i != null) dressMesh.morphTargetInfluences[i] = 0;
-      });
+
+    function getMorphedPosArray(mesh) {
+      const base = mesh.geometry.attributes.position;
+      const out = new Float32Array(base.array.length);
+      out.set(base.array);
+      const morphs = mesh.geometry.morphAttributes.position;
+      const infl = mesh.morphTargetInfluences;
+      if (!morphs || !infl) return out;
+      for (let mi = 0; mi < morphs.length; mi++) {
+        const w = infl[mi];
+        if (!w) continue;
+        const arr = morphs[mi].array;
+        for (let j = 0; j < out.length; j++) out[j] += arr[j] * w;
+      }
+      return out;
     }
-    function applyDressBodyMorphs(grud, podgrud, taliya, zhivot, byodra, scale) {
-      const breastDelta = Math.max(0, grud - podgrud);
-      const breastDeltaMax = Math.max(8, MAX.grud - MIN.podgrud);
-      setBi(dressMesh, dressMorph, 'breastIncr', 'breastDecr', breastDelta, REF.breastDelta, 4, Math.min(28, breastDeltaMax));
-      setBi(dressMesh, dressMorph, 'underbustIncr', 'underbustDecr', podgrud, REF.podgrud, MIN.podgrud, MAX.podgrud);
-      setBi(dressMesh, dressMorph, 'waistIncr', 'waistDecr', taliya, REF.taliya, MIN.taliya, MAX.taliya);
-      setBi(dressMesh, dressMorph, 'bellyIncr', 'bellyDecr', zhivot, REF.zhivot, MIN.zhivot, MAX.zhivot);
-      setBi(dressMesh, dressMorph, 'hipsIncr', 'hipsDecr', byodra, REF.byodra, MIN.byodra, MAX.byodra);
-      if (scale !== 1) {
-        Object.keys(dressMorph).forEach((name) => {
-          if (!name.endsWith('Incr')) return;
-          const i = dressMorph[name];
-          const v = dressMesh.morphTargetInfluences[i];
-          // hips/belly — мягче множитель, чтобы не ловить шипы
-          const cap = (name === 'hipsIncr' || name === 'bellyIncr') ? 1.12 : 1.25;
-          const mul = (name === 'hipsIncr' || name === 'bellyIncr') ? Math.min(scale, 1.08) : scale;
-          if (v > 0) dressMesh.morphTargetInfluences[i] = Math.min(cap, v * mul);
-        });
+
+    function computeVertexNormals(pos, index) {
+      const n = pos.length / 3;
+      const normals = new Float32Array(pos.length);
+      for (let i = 0; i < index.length; i += 3) {
+        const a = index[i] * 3, b = index[i + 1] * 3, c = index[i + 2] * 3;
+        const ax = pos[a], ay = pos[a + 1], az = pos[a + 2];
+        const bx = pos[b], by = pos[b + 1], bz = pos[b + 2];
+        const cx = pos[c], cy = pos[c + 1], cz = pos[c + 2];
+        const abx = bx - ax, aby = by - ay, abz = bz - az;
+        const acx = cx - ax, acy = cy - ay, acz = cz - az;
+        const nx = aby * acz - abz * acy;
+        const ny = abz * acx - abx * acz;
+        const nz = abx * acy - aby * acx;
+        normals[a] += nx; normals[a + 1] += ny; normals[a + 2] += nz;
+        normals[b] += nx; normals[b + 1] += ny; normals[b + 2] += nz;
+        normals[c] += nx; normals[c + 1] += ny; normals[c + 2] += nz;
+      }
+      for (let i = 0; i < n; i++) {
+        const o = i * 3;
+        const len = Math.hypot(normals[o], normals[o + 1], normals[o + 2]) || 1;
+        normals[o] /= len; normals[o + 1] /= len; normals[o + 2] /= len;
+      }
+      return normals;
+    }
+
+    function clearAllDressMorphs() {
+      if (!dressMesh || !dressMesh.morphTargetInfluences) return;
+      for (let i = 0; i < dressMesh.morphTargetInfluences.length; i++) {
+        dressMesh.morphTargetInfluences[i] = 0;
       }
     }
-    function applyDressSizeAndBody(grud, podgrud, taliya, zhivot, byodra) {
-      if (!dressMesh) return;
+
+    function conformDressToBody(grud, taliya, zhivot, byodra) {
+      if (!dressMesh || !bodyMesh || !dressBind || !dressRestPos || !bodyRestPos) return;
       const g = activeChart[dressSize];
       if (!g) return;
-      const tight =
-        grud > g.grud + EASE_CM.grud ||
-        taliya > g.taliya + EASE_CM.taliya ||
-        zhivot > g.taliya + EASE_CM.zhivot ||
-        byodra > g.byodra + EASE_CM.byodra;
-      clearSizeMorphs();
-      resetDressBodyMorphs();
-      // Платье чуть «толще» тела, иначе тело пробивает ткань на экстремумах.
-      const cover = 1.1;
-      if (tight) {
-        applyDressBodyMorphs(grud, podgrud, taliya, zhivot, byodra, cover);
-      } else {
-        if (dressSize !== 46) {
-          if (dressSize <= 54) {
-            const i = dressMorph['size' + dressSize];
-            if (i != null) dressMesh.morphTargetInfluences[i] = 1.0;
-          } else {
-            // частичный size54 + body-follow (полный стек давал шипы — держим слабо)
-            const i = dressMorph['size54'];
-            if (i != null) dressMesh.morphTargetInfluences[i] = 0.28;
-          }
-        }
-        applyDressBodyMorphs(grud, podgrud, taliya, zhivot, byodra, cover);
-        ['breastDecr','underbustDecr','waistDecr','bellyDecr','hipsDecr'].forEach((n) => {
-          const j = dressMorph[n];
-          if (j != null) dressMesh.morphTargetInfluences[j] = 0;
-        });
+
+      // Доп. радиальный запас от сетки (сверх rest MHCLO), min ~0.8 см.
+      const roomCirc = Math.max(
+        EASE_CM.grud + Math.max(0, g.grud - grud),
+        EASE_CM.taliya + Math.max(0, g.taliya - taliya),
+        EASE_CM.zhivot + Math.max(0, g.taliya - zhivot),
+        EASE_CM.byodra + Math.max(0, g.byodra - byodra)
+      );
+      const extraEase = circCmToRadial(Math.max(1.0, Math.min(3.5, EASE_CM.byodra * 0.6 + Math.min(roomCirc, 8) * 0.12)));
+
+      const bodyPos = getMorphedPosArray(bodyMesh);
+      if (!bodyIndexArr) {
+        const idxAttr = bodyMesh.geometry.index;
+        bodyIndexArr = idxAttr ? idxAttr.array : null;
       }
-      // Лёгкий равномерный запас по объёму на больших бёдрах (без локальных шипов).
-      if (dressMesh && byodra > 118) {
-        const t = Math.min(1, (byodra - 118) / (136 - 118));
-        const s = 1 + 0.025 * t;
-        dressMesh.scale.setScalar(s);
-      } else if (dressMesh) {
-        dressMesh.scale.setScalar(1);
+      if (!bodyIndexArr) return;
+      const bodyN = computeVertexNormals(bodyPos, bodyIndexArr);
+
+      const binds = dressBind.binds;
+      const posAttr = dressMesh.geometry.attributes.position;
+      const out = posAttr.array;
+      const nv = binds.length;
+      const restD = dressRestPos;
+      const restB = bodyRestPos;
+
+      // Классический MHCLO follow: rest_dress + (body_now - body_rest) + ease*normal.
+      // Сохраняет форму платья относительно тела во всех направлениях (не только ширина).
+      for (let i = 0; i < nv; i++) {
+        const bi = binds[i];
+        const bo = bi * 3;
+        const io = i * 3;
+        const dx = bodyPos[bo] - restB[bo];
+        const dy = bodyPos[bo + 1] - restB[bo + 1];
+        const dz = bodyPos[bo + 2] - restB[bo + 2];
+        const nx = bodyN[bo], ny = bodyN[bo + 1], nz = bodyN[bo + 2];
+        out[io]     = restD[io]     + dx + nx * extraEase;
+        out[io + 1] = restD[io + 1] + dy + ny * extraEase;
+        out[io + 2] = restD[io + 2] + dz + nz * extraEase;
       }
+      posAttr.needsUpdate = true;
+      dressMesh.geometry.computeVertexNormals();
+      if (dressMesh.geometry.attributes.normal) dressMesh.geometry.attributes.normal.needsUpdate = true;
+      dressMesh.scale.setScalar(1);
     }
+
+    function applyDressSizeAndBody(grud, podgrud, taliya, zhivot, byodra) {
+      if (!dressMesh) return;
+      clearAllDressMorphs();
+      conformDressToBody(grud, taliya, zhivot, byodra);
+    }
+
     function applyProportions(rost, grud, podgrud, taliya, zhivot, byodra) {
       if (bodyMesh) {
         const breastDelta = Math.max(0, grud - podgrud);
@@ -790,13 +835,13 @@
       el.taliyaVal.textContent = String(taliya);
       el.zhivotVal.textContent = String(zhivot);
       el.byodraVal.textContent = String(byodra);
-      el.sizeInfo.innerHTML = 'Размер РФ: ' + razmerRF(grud) + '<br />Ростовка: ' + rostovkaLabel(rost);
 
       const rec = recommendSizeFromBody(grud, taliya, byodra);
       recommendedSize = rec.size;
       if (!sizeManual) {
         dressSize = recommendedSize;
       }
+      el.sizeInfo.innerHTML = 'Размер РФ: ' + recommendedSize + '<br />Ростовка: ' + rostovkaLabel(rost);
       // обновить подписи кнопок (ваш размер)
       el.sizeRow.querySelectorAll('.size-btn').forEach((x) => {
         const s = Number(x.dataset.size);
@@ -828,9 +873,18 @@
     function setDressVisible(on) {
       showDress = on;
       if (dressMesh) dressMesh.visible = on;
+      // Чуть ужать тело под платьем — иначе mid-poly дырки между трисами платья.
+      if (bodyMesh) bodyMesh.scale.setScalar(on ? 0.988 : 1);
       el.btnNude.classList.toggle('active', !on);
       el.btnDress.classList.toggle('active', on);
       updateLabels();
+          if (on && bodyMesh) {
+        const rost = +el.rost.value, grud = +el.grud.value, podgrud = +el.podgrud.value;
+        const taliya = +el.taliya.value, zhivot = +el.zhivot.value, byodra = +el.byodra.value;
+        applyDressSizeAndBody(grud, podgrud, taliya, zhivot, byodra);
+        updateFitPanel(grud, taliya, zhivot, byodra);
+        syncPeekSize();
+      }
     }
     el.btnNude.addEventListener('click', () => setDressVisible(false));
     el.btnDress.addEventListener('click', () => setDressVisible(true));
@@ -1141,22 +1195,104 @@
     window.__setProductChart = (chart, label) => applyChart(chart, label || 'карточка');
     window.__getFitText = () => el.fitPanel.innerText;
     window.__sizeInfoText = () => el.sizeInfo.innerText;
+    window.__gapFront = () => {
+      const bp = getMorphedPosArray(bodyMesh);
+      const dp = dressMesh.geometry.attributes.position.array;
+      const binds = dressBind.binds;
+      const rows = [];
+      for (let i = 0; i < binds.length; i++) {
+        const x = dressRestPos[i * 3], y = dressRestPos[i * 3 + 1], z = dressRestPos[i * 3 + 2];
+        const y01 = (y - 0.48) / (1.39 - 0.48);
+        if (y01 > 0.38 && y01 < 0.58 && z > 0.02 && Math.abs(x) < 0.1) {
+          const bi = binds[i], bo = bi * 3, io = i * 3;
+          rows.push({ i, dZ: +dp[io + 2].toFixed(4), bZ: +bp[bo + 2].toFixed(4), gapZ: +(dp[io + 2] - bp[bo + 2]).toFixed(4) });
+        }
+      }
+      rows.sort((a, b) => b.gapZ - a.gapZ);
+      const mean = rows.reduce((s, r) => s + r.gapZ, 0) / (rows.length || 1);
+      return { n: rows.length, meanGapZ: +mean.toFixed(4), top: rows.slice(0, 8) };
+    };
+    window.__penDebug = () => {
+      if (!dressMesh || !bodyMesh || !dressBind || !dressRestPos) return null;
+      const bp = getMorphedPosArray(bodyMesh);
+      if (!bodyIndexArr) bodyIndexArr = bodyMesh.geometry.index.array;
+      const nrm = computeVertexNormals(bp, bodyIndexArr);
+      const dp = dressMesh.geometry.attributes.position.array;
+      const binds = dressBind.binds;
+      let maxPen = 0, count = 0;
+      const hips = [];
+      for (let i = 0; i < binds.length; i++) {
+        const bi = binds[i], bo = bi * 3, io = i * 3;
+        const nx = nrm[bo], ny = nrm[bo + 1], nz = nrm[bo + 2];
+        const pen = (bp[bo] - dp[io]) * nx + (bp[bo + 1] - dp[io + 1]) * ny + (bp[bo + 2] - dp[io + 2]) * nz;
+        if (pen > maxPen) maxPen = pen;
+        if (pen > 0.002) count++;
+        const y01 = (dressRestPos[io + 1] - 0.48) / (1.39 - 0.48);
+        if (y01 > 0.22 && y01 < 0.5 && pen > 0.001) hips.push({ i, pen: +pen.toFixed(4), dZ: +dp[io + 2].toFixed(4), bZ: +bp[bo + 2].toFixed(4) });
+      }
+      hips.sort((a, b) => b.pen - a.pen);
+      return { maxPen: +maxPen.toFixed(4), count, topHips: hips.slice(0, 10) };
+    };
+    window.__dressDebug = () => {
+      if (!dressMesh || !bodyMesh || !dressBind || !dressRestPos || !bodyRestPos) return { ok: false, why: !dressBind?'bind':!dressRestPos?'drest':!bodyRestPos?'brest':'mesh' };
+      const dp = dressMesh.geometry.attributes.position.array;
+      const bp = getMorphedPosArray(bodyMesh);
+      const infl = bodyMesh.morphTargetInfluences || [];
+      const hipsI = bodyMorph && bodyMorph.hipsIncr;
+      // find back-hip dress vert (mid Y, low Z)
+      let best = 0, bestScore = 1e9;
+      let frontChest = 0, fcScore = -1e9;
+      for (let i = 0; i < dressBind.binds.length; i++) {
+        const y = dressRestPos[i*3+1], z = dressRestPos[i*3+2];
+        const y01 = (y - 0.48) / (1.39 - 0.48);
+        if (y01 > 0.25 && y01 < 0.45 && z < bestScore) { bestScore = z; best = i; }
+        if (y01 > 0.55 && y01 < 0.75 && z > fcScore) { fcScore = z; frontChest = i; }
+      }
+      const pack = (i) => {
+        const bi = dressBind.binds[i];
+        const bo = bi*3, io = i*3;
+        return {
+          i, bi,
+          dressNow: [dp[io], dp[io+1], dp[io+2]],
+          dressRest: [dressRestPos[io], dressRestPos[io+1], dressRestPos[io+2]],
+          bodyNow: [bp[bo], bp[bo+1], bp[bo+2]],
+          bodyRest: [bodyRestPos[bo], bodyRestPos[bo+1], bodyRestPos[bo+2]],
+          bodyDelta: [bp[bo]-bodyRestPos[bo], bp[bo+1]-bodyRestPos[bo+1], bp[bo+2]-bodyRestPos[bo+2]],
+          expected: [
+            dressRestPos[io] + (bp[bo]-bodyRestPos[bo]),
+            dressRestPos[io+1] + (bp[bo+1]-bodyRestPos[bo+1]),
+            dressRestPos[io+2] + (bp[bo+2]-bodyRestPos[bo+2]),
+          ],
+        };
+      };
+      return {
+        ok: true,
+        hipsInfl: hipsI != null ? infl[hipsI] : null,
+        backHip: pack(best),
+        frontChest: pack(frontChest),
+      };
+    };
     window.__setView = (azimuthDeg) => {
       const t = controls.target.clone();
-      const dist = camera.position.distanceTo(t);
-      const elev = Math.atan2(
-        camera.position.y - t.y,
-        Math.hypot(camera.position.x - t.x, camera.position.z - t.z)
-      );
-      const rad = (azimuthDeg || 0) * Math.PI / 180;
+      let dist = camera.position.distanceTo(t);
+      if (!(dist > 0.1)) dist = 2.2;
+      // Keep a mild elevation looking at mid-torso
+      const elev = 0.08;
+      const rad = (Number(azimuthDeg) || 0) * Math.PI / 180;
       const cosE = Math.cos(elev), sinE = Math.sin(elev);
       camera.position.set(
         t.x + dist * cosE * Math.sin(rad),
         t.y + dist * sinE,
         t.z + dist * cosE * Math.cos(rad)
       );
+      camera.lookAt(t);
       controls.update();
     };
+    window.__cam = () => ({
+      pos: camera.position.toArray(),
+      target: controls.target.toArray(),
+      az: Math.atan2(camera.position.x - controls.target.x, camera.position.z - controls.target.z) * 180 / Math.PI
+    });
 
     function pickMorphMesh(model) {
       let found = null;
@@ -1173,10 +1309,13 @@
     Promise.all([
       new Promise((res, rej) => loader.load('./body.glb', res, undefined, rej)),
       new Promise((res, rej) => loader.load('./dress.glb', res, undefined, rej)),
-    ]).then(([bodyGltf, dressGltf]) => {
+      fetch('./dress-bind.json').then((r) => { if (!r.ok) throw new Error('dress-bind'); return r.json(); }),
+    ]).then(([bodyGltf, dressGltf, bindJson]) => {
+      dressBind = bindJson;
       const bodyModel = bodyGltf.scene;
       bodyMesh = pickMorphMesh(bodyModel);
       if (bodyMesh) {
+        bodyRestPos = new Float32Array(bodyMesh.geometry.attributes.position.array);
         bodyMesh.material = new THREE.MeshStandardMaterial({
           color: 0xc8c2b4, roughness: 0.88, metalness: 0.0, morphTargets: true,
         });
@@ -1186,11 +1325,18 @@
       const dressModel = dressGltf.scene;
       dressMesh = pickMorphMesh(dressModel);
       if (dressMesh) {
+        // Позиции пишем напрямую (conform); морфы платья не используем.
+        dressMesh.geometry = dressMesh.geometry.clone();
+        dressRestPos = new Float32Array(dressMesh.geometry.attributes.position.array);
+        // Убрать morphAttributes — иначе шейдер может игнорировать запись в position.
+        dressMesh.geometry.morphAttributes = {};
+        dressMesh.morphTargetInfluences = [];
+        dressMesh.morphTargetDictionary = {};
         dressMesh.material = new THREE.MeshStandardMaterial({
           color: 0x5a6b7a, roughness: 0.78, metalness: 0.0,
-          morphTargets: true, side: THREE.DoubleSide,
+          side: THREE.DoubleSide,
         });
-        dressMorph = morphDict(dressMesh, DRESS_MORPHS);
+        dressMorph = {};
         dressMesh.visible = false;
         dressMesh.renderOrder = 1;
         dressMesh.material.polygonOffset = true;
