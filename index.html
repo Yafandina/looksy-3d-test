@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>Проверка фигуры</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E" />
+  <script src="https://unpkg.com/@vkontakte/vk-bridge/dist/browser.min.js"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #FAF9F4;
+      color: #33322A;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 14px;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: none;
+    }
+    #canvas-wrap {
+      position: absolute;
+      inset: 0 0 210px 0;
+    }
+    canvas { display: block; width: 100%; height: 100%; }
+    #hud {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      right: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      pointer-events: none;
+      z-index: 2;
+      gap: 8px;
+    }
+    #fps, #size-info {
+      background: #FAF9F4;
+      border: 1px solid #33322A;
+      padding: 6px 10px;
+      line-height: 1.35;
+    }
+    #controls {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 210px;
+      padding: 10px 14px 14px;
+      background: #FAF9F4;
+      border-top: 1px solid #33322A;
+      overflow-y: auto;
+      z-index: 3;
+      touch-action: pan-y;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 118px 1fr 48px;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    label { white-space: nowrap; }
+    input[type="range"] {
+      width: 100%;
+      accent-color: #33322A;
+    }
+    .val { text-align: right; font-variant-numeric: tabular-nums; }
+    #status {
+      margin-top: 4px;
+      opacity: 0.75;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div id="canvas-wrap"></div>
+  <div id="hud">
+    <div id="fps">Кадров в секунду: —</div>
+    <div id="size-info">
+      Размер РФ: —<br />
+      Ростовка: —
+    </div>
+  </div>
+  <div id="controls">
+    <div class="row">
+      <label for="rost">Рост, см</label>
+      <input id="rost" type="range" min="150" max="190" step="1" value="164" />
+      <span class="val" id="rost-val">164</span>
+    </div>
+    <div class="row">
+      <label for="grud">Обхват груди, см</label>
+      <input id="grud" type="range" min="76" max="130" step="1" value="92" />
+      <span class="val" id="grud-val">92</span>
+    </div>
+    <div class="row">
+      <label for="taliya">Обхват талии, см</label>
+      <input id="taliya" type="range" min="56" max="120" step="1" value="74" />
+      <span class="val" id="taliya-val">74</span>
+    </div>
+    <div class="row">
+      <label for="byodra">Обхват бёдер, см</label>
+      <input id="byodra" type="range" min="84" max="136" step="1" value="100" />
+      <span class="val" id="byodra-val">100</span>
+    </div>
+    <div id="status">Загрузка модели…</div>
+  </div>
+
+  <script>
+    if (window.vkBridge) {
+      try { window.vkBridge.send('VKWebAppInit'); } catch (e) {}
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+    // Базовые мерки модели Michelle (Mixamo), женская фигура
+    const REF = { rost: 170, grud: 88, taliya: 70, byodra: 96 };
+
+    const el = {
+      rost: document.getElementById('rost'),
+      grud: document.getElementById('grud'),
+      taliya: document.getElementById('taliya'),
+      byodra: document.getElementById('byodra'),
+      rostVal: document.getElementById('rost-val'),
+      grudVal: document.getElementById('grud-val'),
+      taliyaVal: document.getElementById('taliya-val'),
+      byodraVal: document.getElementById('byodra-val'),
+      fps: document.getElementById('fps'),
+      sizeInfo: document.getElementById('size-info'),
+      status: document.getElementById('status'),
+      wrap: document.getElementById('canvas-wrap'),
+    };
+
+    /** Размер РФ по обхвату груди: размер ≈ обхват груди / 2, чётный. */
+    function razmerRF(grudCm) {
+      return Math.round(grudCm / 4) * 2;
+    }
+
+    /** Ростовка: ближайшая из типовых 152–182 (ГОСТ Р 52774). */
+    const ROSTOVKI = [152, 158, 164, 170, 176, 182];
+    function rostovka(rostCm) {
+      let best = ROSTOVKI[0];
+      let bestDiff = Math.abs(rostCm - best);
+      for (const r of ROSTOVKI) {
+        const d = Math.abs(rostCm - r);
+        if (d < bestDiff) { best = r; bestDiff = d; }
+      }
+      return best;
+    }
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xFAF9F4);
+
+    const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
+    camera.position.set(0, 1.1, 2.6);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    el.wrap.appendChild(renderer.domElement);
+
+    const hemi = new THREE.HemisphereLight(0xffffff, 0xbbb8ae, 1.1);
+    scene.add(hemi);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.85);
+    dir.position.set(2, 4, 3);
+    scene.add(dir);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.target.set(0, 0.95, 0);
+    controls.minDistance = 1.2;
+    controls.maxDistance = 5;
+    controls.maxPolarAngle = Math.PI * 0.92;
+    controls.enablePan = false;
+
+    const avatar = new THREE.Group();
+    scene.add(avatar);
+
+    let bones = {};
+    const boneBaseScale = {};
+    let baseUniform = 1;
+
+    function findBone(name) {
+      let found = null;
+      avatar.traverse((o) => {
+        if (o.isBone && o.name === name) found = o;
+      });
+      return found;
+    }
+
+    function rememberBone(name) {
+      const b = findBone(name);
+      if (b) {
+        bones[name] = b;
+        boneBaseScale[name] = b.scale.clone();
+      }
+    }
+
+    function setBoneXZ(name, factor) {
+      const b = bones[name];
+      if (!b) return;
+      const base = boneBaseScale[name];
+      const f = Math.max(0.55, Math.min(1.85, factor));
+      b.scale.set(base.x * f, base.y, base.z * f);
+    }
+
+    function applyProportions(rost, grud, taliya, byodra) {
+      if (!avatar.children.length) return;
+      const h = rost / REF.rost;
+      avatar.scale.setScalar(baseUniform * h);
+
+      const chest = (grud / REF.grud) / Math.sqrt(h);
+      const waist = (taliya / REF.taliya) / Math.sqrt(h);
+      const hips = (byodra / REF.byodra) / Math.sqrt(h);
+
+      setBoneXZ('mixamorig:Spine2', chest);
+      setBoneXZ('mixamorig:Spine1', (chest + waist) * 0.5);
+      setBoneXZ('mixamorig:Spine', waist);
+      setBoneXZ('mixamorig:Hips', hips);
+      setBoneXZ('mixamorig:LeftUpLeg', Math.sqrt(hips));
+      setBoneXZ('mixamorig:RightUpLeg', Math.sqrt(hips));
+      setBoneXZ('mixamorig:LeftShoulder', Math.sqrt(chest));
+      setBoneXZ('mixamorig:RightShoulder', Math.sqrt(chest));
+    }
+
+    function updateLabels() {
+      const rost = +el.rost.value;
+      const grud = +el.grud.value;
+      const taliya = +el.taliya.value;
+      const byodra = +el.byodra.value;
+      el.rostVal.textContent = String(rost);
+      el.grudVal.textContent = String(grud);
+      el.taliyaVal.textContent = String(taliya);
+      el.byodraVal.textContent = String(byodra);
+      el.sizeInfo.innerHTML =
+        'Размер РФ: ' + razmerRF(grud) + '<br />Ростовка: ' + rostovka(rost);
+      applyProportions(rost, grud, taliya, byodra);
+    }
+
+    function resize() {
+      const w = el.wrap.clientWidth || window.innerWidth;
+      const h = el.wrap.clientHeight || Math.max(200, window.innerHeight - 210);
+      camera.aspect = w / Math.max(1, h);
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h, false);
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    ['rost', 'grud', 'taliya', 'byodra'].forEach((id) => {
+      el[id].addEventListener('input', updateLabels);
+    });
+
+    const loader = new GLTFLoader();
+    loader.load(
+      './Michelle.glb',
+      (gltf) => {
+        const model = gltf.scene;
+        avatar.add(model);
+
+        model.traverse((o) => {
+          if (o.isMesh) {
+            o.castShadow = false;
+            o.receiveShadow = false;
+          }
+        });
+
+        // Нормализуем высоту модели до 1.7 м (= 170 см)
+        avatar.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(avatar);
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        baseUniform = 1.7 / Math.max(0.001, size.y);
+        avatar.scale.setScalar(baseUniform);
+        avatar.updateMatrixWorld(true);
+        const box2 = new THREE.Box3().setFromObject(avatar);
+        avatar.position.y -= box2.min.y;
+
+        [
+          'mixamorig:Hips',
+          'mixamorig:Spine',
+          'mixamorig:Spine1',
+          'mixamorig:Spine2',
+          'mixamorig:LeftUpLeg',
+          'mixamorig:RightUpLeg',
+          'mixamorig:LeftShoulder',
+          'mixamorig:RightShoulder',
+        ].forEach(rememberBone);
+
+        el.status.textContent = 'Крутите фигуру пальцем. Ползунки меняют мерки.';
+        updateLabels();
+      },
+      undefined,
+      (err) => {
+        console.error(err);
+        el.status.textContent = 'Не удалось загрузить модель.';
+      }
+    );
+
+    let frames = 0;
+    let lastFps = performance.now();
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+      frames++;
+      const now = performance.now();
+      if (now - lastFps >= 500) {
+        const fps = Math.round((frames * 1000) / (now - lastFps));
+        el.fps.textContent = 'Кадров в секунду: ' + fps;
+        frames = 0;
+        lastFps = now;
+      }
+    }
+    animate();
+    updateLabels();
+  </script>
+</body>
+</html>
