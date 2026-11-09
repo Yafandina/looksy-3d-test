@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <title>Проверка фигуры</title>
+  <title>Проверка фигуры и посадки</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E" />
   <script src="https://unpkg.com/@vkontakte/vk-bridge/dist/browser.min.js"></script>
   <script type="importmap">
@@ -24,19 +24,21 @@
       -webkit-tap-highlight-color: transparent;
       touch-action: none;
     }
-    #canvas-wrap { position: absolute; inset: 0 0 280px 0; }
+    #canvas-wrap { position: absolute; inset: 0 0 340px 0; }
     canvas { display: block; width: 100%; height: 100%; }
     #hud {
       position: absolute; top: 8px; left: 8px; right: 8px;
       display: flex; justify-content: space-between; align-items: flex-start;
       pointer-events: none; z-index: 2; gap: 8px;
     }
-    #fps, #size-info {
+    #fps, #size-info, #fit-panel {
       background: #FAF9F4; border: 1px solid #33322A;
       padding: 6px 10px; line-height: 1.35;
     }
+    #fit-panel { max-width: 52%; font-size: 12px; }
+    #fit-panel strong { font-weight: 600; }
     #controls {
-      position: absolute; left: 0; right: 0; bottom: 0; height: 280px;
+      position: absolute; left: 0; right: 0; bottom: 0; height: 340px;
       padding: 10px 14px 12px; background: #FAF9F4;
       border-top: 1px solid #33322A; overflow-y: auto; z-index: 3;
       touch-action: pan-y;
@@ -45,6 +47,22 @@
       display: grid; grid-template-columns: 130px 1fr 44px;
       align-items: center; gap: 8px; margin-bottom: 7px;
     }
+    .row-toggle {
+      display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;
+    }
+    .row-toggle button, .size-btn {
+      background: #FAF9F4; color: #33322A; border: 1px solid #33322A;
+      padding: 7px 12px; font-size: 13px; cursor: pointer;
+      font-family: inherit;
+    }
+    .row-toggle button.active, .size-btn.active {
+      background: #33322A; color: #FAF9F4;
+    }
+    #size-row {
+      display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px;
+      align-items: center;
+    }
+    #size-row .lbl { margin-right: 4px; font-size: 13px; }
     label { white-space: nowrap; font-size: 13px; }
     input[type="range"] { width: 100%; accent-color: #33322A; }
     .val { text-align: right; font-variant-numeric: tabular-nums; }
@@ -55,9 +73,20 @@
   <div id="canvas-wrap"></div>
   <div id="hud">
     <div id="fps">Кадров в секунду: —</div>
-    <div id="size-info">Размер РФ: —<br />Ростовка: —</div>
+    <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+      <div id="size-info">Размер РФ: —<br />Ростовка: —</div>
+      <div id="fit-panel">Посадка: выберите платье</div>
+    </div>
   </div>
   <div id="controls">
+    <div class="row-toggle">
+      <button type="button" id="btn-nude" class="active">Без одежды</button>
+      <button type="button" id="btn-dress">В платье</button>
+    </div>
+    <div id="size-row">
+      <span class="lbl">Размер платья:</span>
+      <!-- Размеры 42–54: см. SIZE_CHART в скрипте -->
+    </div>
     <div class="row">
       <label for="rost">Рост, см</label>
       <input id="rost" type="range" min="150" max="190" step="1" value="164" />
@@ -101,9 +130,30 @@
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
+    /*
+     * Российская размерная сетка женской одежды (рост ~164), обхваты в см.
+     * Источник таблицы: http://urban-s.ru/tablica-razmerov
+     * («Таблица женских размеров», обозначения вида 164-84-92 … 164-108-116).
+     * Те же середины обхватов приведены в сводке на основе ГОСТ:
+     * https://resizes.ru/tablitsa-razmerov-gost/
+     * Не выдумано: копируем опубликованные значения груди/талии/бёдер.
+     */
+    const SIZE_CHART = {
+      42: { grud: 84, taliya: 66, byodra: 92 },
+      44: { grud: 88, taliya: 70, byodra: 96 },
+      46: { grud: 92, taliya: 74, byodra: 100 },
+      48: { grud: 96, taliya: 78, byodra: 104 },
+      50: { grud: 100, taliya: 82, byodra: 108 },
+      52: { grud: 104, taliya: 86, byodra: 112 },
+      54: { grud: 108, taliya: 90, byodra: 116 },
+    };
+    // Прибавки на свободу облегания для приталенного платья (см), заявленные явно.
+    const EASE_CM = { grud: 2, taliya: 2, zhivot: 4, byodra: 2 };
+    const FIT_EPS = 1; // см: порог «по фигуре»
+
     const REF = {
       rost: 164, grud: 92, podgrud: 80, taliya: 74, zhivot: 80, byodra: 100,
-      breastDelta: 12, // grud - podgrud
+      breastDelta: 12,
     };
     const MIN = { rost: 150, grud: 76, podgrud: 60, taliya: 56, zhivot: 60, byodra: 84 };
     const MAX = { rost: 190, grud: 130, podgrud: 110, taliya: 120, zhivot: 130, byodra: 136 };
@@ -123,9 +173,31 @@
       byodraVal: document.getElementById('byodra-val'),
       fps: document.getElementById('fps'),
       sizeInfo: document.getElementById('size-info'),
+      fitPanel: document.getElementById('fit-panel'),
       status: document.getElementById('status'),
       wrap: document.getElementById('canvas-wrap'),
+      btnNude: document.getElementById('btn-nude'),
+      btnDress: document.getElementById('btn-dress'),
+      sizeRow: document.getElementById('size-row'),
     };
+
+    let dressSize = 46;
+    let showDress = false;
+
+    // кнопки размеров
+    Object.keys(SIZE_CHART).forEach((sz) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'size-btn' + (Number(sz) === dressSize ? ' active' : '');
+      b.textContent = sz;
+      b.dataset.size = sz;
+      b.addEventListener('click', () => {
+        dressSize = Number(sz);
+        document.querySelectorAll('.size-btn').forEach((x) => x.classList.toggle('active', Number(x.dataset.size) === dressSize));
+        updateLabels();
+      });
+      el.sizeRow.appendChild(b);
+    });
 
     function razmerRF(grudCm) { return Math.round(grudCm / 4) * 2; }
     const ROSTOVKI = [152, 158, 164, 170, 176, 182];
@@ -138,11 +210,35 @@
       return best;
     }
 
+    function fitPhrase(bodyCm, garmentCm, easeCm) {
+      const room = (garmentCm + easeCm) - bodyCm;
+      if (Math.abs(room) < FIT_EPS) return 'по фигуре';
+      if (room < 0) return 'тесно на ' + Math.round(-room) + ' см';
+      return 'свободно на ' + Math.round(room) + ' см';
+    }
+
+    function updateFitPanel(grud, taliya, zhivot, byodra) {
+      if (!showDress) {
+        el.fitPanel.textContent = 'Посадка: включите «В платье»';
+        return;
+      }
+      const g = SIZE_CHART[dressSize];
+      // Живот в сетке ГОСТ отдельно не задан — сравниваем с талией размера + прибавка EASE_CM.zhivot.
+      const lines = [
+        '<strong>Посадка (р.' + dressSize + ')</strong>',
+        'Грудь: ' + fitPhrase(grud, g.grud, EASE_CM.grud),
+        'Талия: ' + fitPhrase(taliya, g.taliya, EASE_CM.taliya),
+        'Живот: ' + fitPhrase(zhivot, g.taliya, EASE_CM.zhivot),
+        'Бёдра: ' + fitPhrase(byodra, g.byodra, EASE_CM.byodra),
+      ];
+      el.fitPanel.innerHTML = lines.join('<br />');
+    }
+
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xFAF9F4);
     const camera = new THREE.PerspectiveCamera(35, 1, 0.05, 50);
     camera.position.set(0, 1.0, 2.5);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     el.wrap.appendChild(renderer.domElement);
@@ -163,18 +259,18 @@
     controls.maxDistance = 4.5;
     controls.maxPolarAngle = Math.PI * 0.92;
     controls.enablePan = false;
-    controls.enableRotate = true;
-    controls.enableZoom = true;
     controls.minAzimuthAngle = -Infinity;
     controls.maxAzimuthAngle = Infinity;
 
     const root = new THREE.Group();
     scene.add(root);
 
-    let mesh = null;
-    let morphIndex = {};
+    let bodyMesh = null;
+    let dressMesh = null;
+    let bodyMorph = {};
+    let dressMorph = {};
 
-    function setBi(incrName, decrName, value, ref, minV, maxV) {
+    function setBi(mesh, morphIndex, incrName, decrName, value, ref, minV, maxV) {
       if (!mesh || !mesh.morphTargetInfluences) return;
       const ii = morphIndex[incrName];
       const di = morphIndex[decrName];
@@ -187,22 +283,98 @@
       if (di != null) mesh.morphTargetInfluences[di] = decr;
     }
 
-    function applyProportions(rost, grud, podgrud, taliya, zhivot, byodra) {
-      if (!mesh) return;
-      // Грудь: объём/проекция от разницы грудь − под грудью (+ сам обхват груди)
+    function clearSizeMorphs() {
+      if (!dressMesh) return;
+      [42, 44, 48, 50, 52, 54].forEach((sz) => {
+        const i = dressMorph['size' + sz];
+        if (i != null) dressMesh.morphTargetInfluences[i] = 0;
+      });
+    }
+
+    /** Эквивалент размера тела по груди (ближайший из сетки). */
+    function bodyEquivalentSize(grud) {
+      let best = 46, bestDiff = Infinity;
+      Object.keys(SIZE_CHART).forEach((sz) => {
+        const d = Math.abs(SIZE_CHART[sz].grud - grud);
+        if (d < bestDiff) { bestDiff = d; best = Number(sz); }
+      });
+      return best;
+    }
+
+    function resetDressBodyMorphs() {
+      if (!dressMesh) return;
+      BODY_MORPHS.forEach((n) => {
+        const i = dressMorph[n];
+        if (i != null) dressMesh.morphTargetInfluences[i] = 0;
+      });
+    }
+
+    function applyDressBodyMorphs(grud, podgrud, taliya, zhivot, byodra, scale) {
       const breastDelta = Math.max(0, grud - podgrud);
       const breastDeltaMax = Math.max(8, MAX.grud - MIN.podgrud);
-      setBi('breastIncr', 'breastDecr', breastDelta, REF.breastDelta, 4, Math.min(28, breastDeltaMax));
-      // Под грудью — каркас/рибкейдж
-      setBi('underbustIncr', 'underbustDecr', podgrud, REF.podgrud, MIN.podgrud, MAX.podgrud);
-      setBi('waistIncr', 'waistDecr', taliya, REF.taliya, MIN.taliya, MAX.taliya);
-      setBi('bellyIncr', 'bellyDecr', zhivot, REF.zhivot, MIN.zhivot, MAX.zhivot);
-      setBi('hipsIncr', 'hipsDecr', byodra, REF.byodra, MIN.byodra, MAX.byodra);
+      setBi(dressMesh, dressMorph, 'breastIncr', 'breastDecr', breastDelta, REF.breastDelta, 4, Math.min(28, breastDeltaMax));
+      setBi(dressMesh, dressMorph, 'underbustIncr', 'underbustDecr', podgrud, REF.podgrud, MIN.podgrud, MAX.podgrud);
+      setBi(dressMesh, dressMorph, 'waistIncr', 'waistDecr', taliya, REF.taliya, MIN.taliya, MAX.taliya);
+      setBi(dressMesh, dressMorph, 'bellyIncr', 'bellyDecr', zhivot, REF.zhivot, MIN.zhivot, MAX.zhivot);
+      setBi(dressMesh, dressMorph, 'hipsIncr', 'hipsDecr', byodra, REF.byodra, MIN.byodra, MAX.byodra);
+      if (scale !== 1) {
+        dressMesh.morphTargetInfluences.forEach((v, i) => {
+          // усиливаем только incr-морфы (чётные имена *Incr)
+          const name = Object.keys(dressMorph).find((k) => dressMorph[k] === i) || '';
+          if (name.endsWith('Incr') && v > 0) dressMesh.morphTargetInfluences[i] = Math.min(1.35, v * scale);
+        });
+      }
+    }
+
+    function applyDressSizeAndBody(grud, podgrud, taliya, zhivot, byodra) {
+      if (!dressMesh) return;
+      const g = SIZE_CHART[dressSize];
+      // Тесно, если тело выходит за мерки размера + прибавку свободы.
+      const tight =
+        grud > g.grud + EASE_CM.grud ||
+        taliya > g.taliya + EASE_CM.taliya ||
+        zhivot > g.taliya + EASE_CM.zhivot ||
+        byodra > g.byodra + EASE_CM.byodra;
+
+      clearSizeMorphs();
+      resetDressBodyMorphs();
+
+      if (tight) {
+        // Облегание: платье следует телу (с лёгким запасом), size-морф не сжимает.
+        applyDressBodyMorphs(grud, podgrud, taliya, zhivot, byodra, 1.05);
+      } else {
+        // Свободно / по фигуре: геометрия от размера платья.
+        if (dressSize !== 46) {
+          const i = dressMorph['size' + dressSize];
+          if (i != null) dressMesh.morphTargetInfluences[i] = 1.0;
+        }
+        // Лёгкая подстройка формы груди/живота без сжатия ниже размера.
+        applyDressBodyMorphs(grud, podgrud, taliya, zhivot, byodra, 1.0);
+        // Обнуляем decr-морфы, чтобы платье не сжималось вместе с худым телом.
+        ['breastDecr','underbustDecr','waistDecr','bellyDecr','hipsDecr'].forEach((n) => {
+          const i = dressMorph[n];
+          if (i != null) dressMesh.morphTargetInfluences[i] = 0;
+        });
+        // Incr только если тело выше базы 46, но всё ещё меньше размера платья.
+        // (уже выставлено applyDressBodyMorphs; decr сняты)
+      }
+    }
+
+    function applyProportions(rost, grud, podgrud, taliya, zhivot, byodra) {
+      if (bodyMesh) {
+        const breastDelta = Math.max(0, grud - podgrud);
+        const breastDeltaMax = Math.max(8, MAX.grud - MIN.podgrud);
+        setBi(bodyMesh, bodyMorph, 'breastIncr', 'breastDecr', breastDelta, REF.breastDelta, 4, Math.min(28, breastDeltaMax));
+        setBi(bodyMesh, bodyMorph, 'underbustIncr', 'underbustDecr', podgrud, REF.podgrud, MIN.podgrud, MAX.podgrud);
+        setBi(bodyMesh, bodyMorph, 'waistIncr', 'waistDecr', taliya, REF.taliya, MIN.taliya, MAX.taliya);
+        setBi(bodyMesh, bodyMorph, 'bellyIncr', 'bellyDecr', zhivot, REF.zhivot, MIN.zhivot, MAX.zhivot);
+        setBi(bodyMesh, bodyMorph, 'hipsIncr', 'hipsDecr', byodra, REF.byodra, MIN.byodra, MAX.byodra);
+      }
+      applyDressSizeAndBody(grud, podgrud, taliya, zhivot, byodra);
       root.scale.setScalar(rost / REF.rost);
     }
 
     function updateLabels() {
-      // Не даём подгрудному обхвату быть больше груди
       if (+el.podgrud.value > +el.grud.value - 4) {
         el.podgrud.value = String(Math.max(MIN.podgrud, +el.grud.value - 4));
       }
@@ -220,11 +392,22 @@
       el.byodraVal.textContent = String(byodra);
       el.sizeInfo.innerHTML = 'Размер РФ: ' + razmerRF(grud) + '<br />Ростовка: ' + rostovka(rost);
       applyProportions(rost, grud, podgrud, taliya, zhivot, byodra);
+      updateFitPanel(grud, taliya, zhivot, byodra);
     }
+
+    function setDressVisible(on) {
+      showDress = on;
+      if (dressMesh) dressMesh.visible = on;
+      el.btnNude.classList.toggle('active', !on);
+      el.btnDress.classList.toggle('active', on);
+      updateLabels();
+    }
+    el.btnNude.addEventListener('click', () => setDressVisible(false));
+    el.btnDress.addEventListener('click', () => setDressVisible(true));
 
     function resize() {
       const w = el.wrap.clientWidth || window.innerWidth;
-      const h = el.wrap.clientHeight || Math.max(200, window.innerHeight - 280);
+      const h = el.wrap.clientHeight || Math.max(200, window.innerHeight - 340);
       camera.aspect = w / Math.max(1, h);
       camera.updateProjectionMatrix();
       renderer.setSize(w, h, false);
@@ -241,26 +424,67 @@
       el.taliya.value = taliya; el.zhivot.value = zhivot; el.byodra.value = byodra;
       updateLabels();
     };
+    window.__setDress = (on, size) => {
+      if (size != null) {
+        dressSize = Number(size);
+        document.querySelectorAll('.size-btn').forEach((x) => x.classList.toggle('active', Number(x.dataset.size) === dressSize));
+      }
+      setDressVisible(!!on);
+    };
 
-    new GLTFLoader().load('./body.glb', (gltf) => {
-      const model = gltf.scene;
+    function pickMorphMesh(model) {
+      let found = null;
       model.traverse((o) => {
-        if (o.isMesh && o.morphTargetInfluences) {
-          mesh = o;
-          o.castShadow = false;
-          o.receiveShadow = false;
-          o.material = new THREE.MeshStandardMaterial({
-            color: 0xc8c2b4, roughness: 0.88, metalness: 0.0,
-            morphTargets: true, flatShading: false,
-          });
-          morphIndex = { ...(o.morphTargetDictionary || {}) };
-          if (!Object.keys(morphIndex).length) {
-            const names = ['breastIncr','breastDecr','underbustIncr','underbustDecr','waistIncr','waistDecr','bellyIncr','bellyDecr','hipsIncr','hipsDecr'];
-            names.forEach((n, i) => { morphIndex[n] = i; });
-          }
-        }
+        if (o.isMesh && o.morphTargetInfluences) found = o;
       });
-      root.add(model);
+      return found;
+    }
+
+    function morphDict(mesh, fallbackNames) {
+      let d = { ...(mesh.morphTargetDictionary || {}) };
+      if (!Object.keys(d).length) {
+        fallbackNames.forEach((n, i) => { d[n] = i; });
+      }
+      return d;
+    }
+
+    const loader = new GLTFLoader();
+    const BODY_MORPHS = ['breastIncr','breastDecr','underbustIncr','underbustDecr','waistIncr','waistDecr','bellyIncr','bellyDecr','hipsIncr','hipsDecr'];
+    const DRESS_MORPHS = BODY_MORPHS.concat(['size42','size44','size48','size50','size52','size54']);
+
+    Promise.all([
+      new Promise((res, rej) => loader.load('./body.glb', res, undefined, rej)),
+      new Promise((res, rej) => loader.load('./dress.glb', res, undefined, rej)),
+    ]).then(([bodyGltf, dressGltf]) => {
+      const bodyModel = bodyGltf.scene;
+      bodyMesh = pickMorphMesh(bodyModel);
+      if (bodyMesh) {
+        bodyMesh.material = new THREE.MeshStandardMaterial({
+          color: 0xc8c2b4, roughness: 0.88, metalness: 0.0,
+          morphTargets: true, flatShading: false,
+        });
+        bodyMorph = morphDict(bodyMesh, BODY_MORPHS);
+      }
+      root.add(bodyModel);
+
+      const dressModel = dressGltf.scene;
+      dressMesh = pickMorphMesh(dressModel);
+      if (dressMesh) {
+        dressMesh.material = new THREE.MeshStandardMaterial({
+          color: 0x5a6b7a, roughness: 0.78, metalness: 0.0,
+          morphTargets: true, flatShading: false, side: THREE.DoubleSide,
+        });
+        dressMorph = morphDict(dressMesh, DRESS_MORPHS);
+        dressMesh.visible = false;
+        // чуть выше тела, чтобы z-fight реже
+        dressMesh.renderOrder = 1;
+        dressMesh.polygonOffset = true;
+        dressMesh.material.polygonOffset = true;
+        dressMesh.material.polygonOffsetFactor = -1;
+        dressMesh.material.polygonOffsetUnits = -1;
+      }
+      root.add(dressModel);
+
       root.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(root);
       root.position.y -= box.min.y;
@@ -269,12 +493,11 @@
       box2.getCenter(mid);
       controls.target.set(0, mid.y * 0.92, 0);
       camera.position.set(0, mid.y * 0.95, 2.4);
-      el.status.textContent = 'Крутите фигуру пальцем. Ползунки меняют мерки.';
-      console.log('morphs', morphIndex);
+      el.status.textContent = 'Крутите фигуру. Платье — CC0 MakeHuman (halter knee).';
       updateLabels();
-    }, undefined, (err) => {
+    }).catch((err) => {
       console.error(err);
-      el.status.textContent = 'Не удалось загрузить манекен.';
+      el.status.textContent = 'Не удалось загрузить модели.';
     });
 
     let frames = 0, lastFps = performance.now();
