@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <title>Проверка фигуры и посадки</title>
+  <title>Проверка посадки по фигуре</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E" />
   <script src="https://unpkg.com/@vkontakte/vk-bridge/dist/browser.min.js"></script>
   <script type="importmap">
@@ -18,24 +18,12 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
       width: 100%; height: 100%; overflow: hidden;
-      background: #FAF9F4; color: #33322A;
+      background: #F4F2EC; color: #33322A;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      font-size: 14px;
-      -webkit-tap-highlight-color: transparent;
-      touch-action: none;
+      font-size: 14px; -webkit-tap-highlight-color: transparent; touch-action: none;
     }
-    #app {
-      display: flex; flex-direction: column;
-      height: 100%; width: 100%;
-      position: relative;
-    }
-    /* Stage = mannequin dominates */
-    #stage {
-      flex: 1 1 auto;
-      position: relative;
-      min-height: 0;
-      background: #FAF9F4;
-    }
+    #app { display: flex; flex-direction: column; height: 100%; width: 100%; position: relative; }
+    #stage { flex: 1 1 auto; position: relative; min-height: 0; background: #F4F2EC; }
     #canvas-wrap { position: absolute; inset: 0; }
     #canvas-wrap canvas { display: block; width: 100%; height: 100%; }
     #hud {
@@ -43,1335 +31,669 @@
       display: flex; justify-content: space-between; align-items: flex-start;
       pointer-events: none; z-index: 2; gap: 8px;
     }
-    #fps, #size-info {
-      background: rgba(250,249,244,0.88); border: 1px solid #33322A;
+    #hud > div {
+      background: rgba(244,242,236,0.9); border: 1px solid #33322A;
       padding: 4px 8px; line-height: 1.3; font-size: 11px;
     }
+    #fig-switch { pointer-events: auto; display: flex; gap: 0; padding: 0 !important; }
+    #fig-switch button {
+      border: 0; background: transparent; color: #33322A; padding: 5px 10px;
+      font: inherit; font-size: 12px; cursor: pointer;
+    }
+    #fig-switch button.active { background: #33322A; color: #F4F2EC; }
+    #fps { position: absolute; left: 8px; bottom: 8px; z-index: 2; font-size: 10px; opacity: .55; pointer-events: none; }
+    #legend { position: absolute; right: 8px; bottom: 8px; z-index: 2; font-size: 11px; display: none;
+      background: rgba(244,242,236,0.9); border: 1px solid #33322A; padding: 4px 8px; pointer-events: none; }
+    #legend i { display: inline-block; width: 10px; height: 10px; margin: 0 4px -1px 6px; }
 
-    /* Bottom sheet (phone) / side panel (desktop) */
     #sheet {
-      flex: 0 0 auto;
-      background: #FAF9F4;
-      border-top: 1px solid #33322A;
-      z-index: 5;
-      display: flex; flex-direction: column;
-      max-height: 78vh;
-      touch-action: pan-y;
+      flex: 0 0 auto; background: #F4F2EC; border-top: 1px solid #33322A; z-index: 5;
+      display: flex; flex-direction: column; max-height: 78vh; touch-action: pan-y;
     }
     #sheet-handle {
-      flex: 0 0 auto;
-      display: flex; flex-direction: column; align-items: center;
-      padding: 6px 12px 4px;
-      cursor: pointer;
-      user-select: none;
-      -webkit-user-select: none;
-      gap: 6px;
+      flex: 0 0 auto; display: flex; flex-direction: column; align-items: stretch;
+      padding: 6px 12px 6px; cursor: pointer; user-select: none; -webkit-user-select: none; gap: 5px;
     }
-    #sheet-grip {
-      width: 40px; height: 4px; border-radius: 2px;
-      background: #33322A; opacity: 0.35;
+    #sheet-grip { width: 40px; height: 4px; border-radius: 2px; background: #33322A; opacity: 0.35; align-self: center; }
+    .peek-size { font-weight: 600; font-size: 13px; }
+    .peek-fit { font-size: 12px; line-height: 1.4; }
+    .peek-fit b.tight { color: #a3321f; }
+    .peek-fit b.ok { color: #2f6b45; }
+    #peek-cta {
+      align-self: stretch; background: #33322A; color: #F4F2EC; border: 0; padding: 9px;
+      font: inherit; font-size: 13px; cursor: pointer;
     }
-    #sheet-peek {
-      width: 100%;
-      text-align: left;
-      font-size: 12px; line-height: 1.4;
-    }
-    #sheet-peek .peek-size { font-weight: 600; }
-    #sheet-peek .peek-fit { opacity: 0.9; margin-top: 2px; }
-    #sheet-peek .peek-hint { opacity: 0.75; font-size: 11px; margin-top: 2px; }
-    #sheet-chevron {
-      font-size: 11px; opacity: 0.6; margin-top: 2px;
-    }
-    #sheet-body {
-      display: none;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-      padding: 0 14px 14px;
-      flex: 1 1 auto;
-      min-height: 0;
-    }
+    #sheet-body { display: none; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 14px 14px; flex: 1 1 auto; min-height: 0; }
     #sheet.expanded #sheet-body { display: block; }
-    #sheet.expanded #sheet-chevron::before { content: "Свернуть настройки ▲"; }
-    #sheet:not(.expanded) #sheet-chevron::before { content: "Настройки ▼"; }
-    #sheet:not(.expanded) { max-height: none; }
-
+    #sheet.expanded #peek-cta { display: none; }
     .tabs { display: flex; gap: 6px; margin: 8px 0 10px; }
     .tabs button {
-      flex: 1; background: #FAF9F4; color: #33322A; border: 1px solid #33322A;
+      flex: 1; background: #F4F2EC; color: #33322A; border: 1px solid #33322A;
       padding: 8px; font-size: 13px; font-family: inherit; cursor: pointer;
     }
-    .tabs button.active { background: #33322A; color: #FAF9F4; }
+    .tabs button.active { background: #33322A; color: #F4F2EC; }
     .panel { display: none; }
     .panel.active { display: block; }
-    .row {
-      display: grid; grid-template-columns: 120px 1fr 44px;
-      align-items: center; gap: 8px; margin-bottom: 8px;
-    }
+    .row { display: grid; grid-template-columns: 120px 1fr 44px; align-items: center; gap: 8px; margin-bottom: 8px; }
     .slider-cell { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-    .slider-cell .bounds {
-      font-size: 10px; opacity: 0.65;
-      display: flex; justify-content: space-between;
+    .slider-cell .bounds { font-size: 10px; opacity: 0.65; display: flex; justify-content: space-between; }
+    .btn-row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+    .file-btn {
+      background: #F4F2EC; color: #33322A; border: 1px solid #33322A;
+      padding: 7px 10px; font-size: 12px; cursor: pointer; font-family: inherit;
     }
-    .row-toggle, .btn-row {
-      display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap;
-    }
-    .row-toggle button, .size-btn, .btn-row button, .file-btn {
-      background: #FAF9F4; color: #33322A; border: 1px solid #33322A;
-      padding: 6px 10px; font-size: 12px; cursor: pointer; font-family: inherit;
-    }
-    .row-toggle button.active, .size-btn.active { background: #33322A; color: #FAF9F4; }
-    .size-btn.yours {
-      outline: 2px solid #33322A; outline-offset: 1px; font-weight: 600;
-    }
-    .size-btn.yours:not(.active) { background: #ebe8df; }
-    #size-row { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; align-items: center; }
-    #size-row .lbl { margin-right: 4px; font-size: 12px; }
-    #size-hint { font-size: 11px; margin-bottom: 6px; line-height: 1.3; min-height: 1em; }
+    .file-btn.primary { background: #33322A; color: #F4F2EC; flex: 1; padding: 10px; font-size: 13px; }
+    h3 { font-size: 13px; margin: 4px 0 6px; }
     label { font-size: 12px; line-height: 1.2; padding-right: 2px; }
     input[type="range"] { width: 100%; accent-color: #33322A; height: 24px; }
-    input[type="url"], input[type="text"], input[type="number"] {
-      width: 100%; border: 1px solid #33322A; background: #FAF9F4; color: #33322A;
-      padding: 6px 8px; font-size: 13px; font-family: inherit;
+    input[type="url"], input[type="number"] {
+      width: 100%; border: 1px solid #33322A; background: #F4F2EC; color: #33322A;
+      padding: 7px 8px; font-size: 13px; font-family: inherit;
     }
     .val { text-align: right; font-variant-numeric: tabular-nums; font-size: 12px; }
     #status, .hint { margin-top: 4px; opacity: 0.8; font-size: 11px; line-height: 1.35; }
     .hint { margin-bottom: 6px; }
     .hidden-file { position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none; }
-    #chart-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    table.chart {
-      width: 100%; border-collapse: collapse; border-spacing: 0;
-      font-size: 11px; margin: 6px 0; border: 1px solid #33322A;
-    }
-    table.chart th, table.chart td {
-      border: 1px solid #33322A; padding: 5px 3px; text-align: center;
-    }
-    table.chart input {
-      width: 100%; border: 0; background: transparent; text-align: center;
-      color: #33322A; font-size: 11px; padding: 2px; font-family: inherit; outline: none;
-    }
-    #chart-source { font-size: 11px; margin-bottom: 4px; opacity: 0.85; }
-    #fit-hint-inline { display: none; }
-
-    #crop-overlay {
-      display: none; position: fixed; inset: 0; z-index: 20;
-      background: rgba(51,50,42,0.92); color: #FAF9F4;
-      flex-direction: column; padding: 12px; touch-action: none;
-    }
-    #crop-overlay.open { display: flex; }
-    #crop-stage {
-      flex: 1; position: relative; overflow: hidden;
-      background: #222; border: 1px solid #FAF9F4; min-height: 200px;
-    }
-    #crop-stage canvas { width: 100%; height: 100%; object-fit: contain; }
-    #crop-box {
-      position: absolute; border: 2px solid #FAF9F4; box-shadow: 0 0 0 9999px rgba(0,0,0,0.45);
-      touch-action: none; cursor: move;
-    }
-    #crop-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-    #crop-actions button {
-      flex: 1; padding: 12px; border: 1px solid #FAF9F4; background: transparent;
-      color: #FAF9F4; font-size: 14px; font-family: inherit;
-    }
-    #crop-actions button.primary { background: #FAF9F4; color: #33322A; }
-
-    /* Desktop: side panel, canvas fills the rest */
+    #chart-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; display: none; }
+    #chart-wrap.on { display: block; }
+    table.chart { width: 100%; border-collapse: collapse; font-size: 11px; margin: 6px 0; border: 1px solid #33322A; }
+    table.chart th, table.chart td { border: 1px solid #33322A; padding: 5px 3px; text-align: center; }
+    table.chart tr.yours td { background: #e6e2d6; font-weight: 600; }
+    table.chart input { width: 100%; border: 0; background: transparent; text-align: center; color: #33322A;
+      font-size: 11px; padding: 2px; font-family: inherit; outline: none; font-weight: inherit; }
+    .sep { margin: 10px 0 8px; border-top: 1px solid rgba(51,50,42,.25); }
     @media (min-width: 900px) {
       #app { flex-direction: row; }
       #stage { flex: 1 1 auto; min-width: 0; }
-      #sheet {
-        flex: 0 0 340px;
-        width: 340px;
-        max-width: 38vw;
-        height: 100%;
-        max-height: none;
-        border-top: 0;
-        border-left: 1px solid #33322A;
-      }
-      #sheet-handle { display: none; }
-      #sheet-body {
-        display: block !important;
-        padding: 12px 14px 16px;
-        height: 100%;
-      }
-      #sheet-peek-desk {
-        display: block;
-        padding: 10px 14px 0;
-        font-size: 12px; line-height: 1.4;
-        border-bottom: 1px solid #33322A;
-        padding-bottom: 8px;
-        margin-bottom: 0;
-      }
+      #sheet { flex: 0 0 340px; width: 340px; max-width: 38vw; height: 100%; max-height: none; border-top: 0; border-left: 1px solid #33322A; }
+      #sheet-handle { cursor: default; border-bottom: 1px solid #33322A; padding: 10px 14px; }
+      #sheet-grip, #peek-cta { display: none; }
+      #sheet-body { display: block !important; padding: 8px 14px 16px; }
       .row { grid-template-columns: 110px 1fr 40px; gap: 6px; }
-      #hud #fps, #hud #size-info { font-size: 12px; }
+      #hud > div { font-size: 12px; }
     }
-    @media (max-width: 899px) {
-      #sheet-peek-desk { display: none; }
-      /* collapsed sheet ~ compact bar; expanded up to 55vh so canvas stays ~45%+ */
-      #sheet.expanded { max-height: 55vh; }
-    }
+    @media (max-width: 899px) { #sheet.expanded { max-height: 55vh; } }
   </style>
 </head>
 <body>
-  <div id="app">
+<div id="app">
   <div id="stage">
     <div id="canvas-wrap"></div>
     <div id="hud">
-      <div id="fps">Кадров в секунду: —</div>
       <div id="size-info">Размер РФ: —<br />Ростовка: —</div>
+      <div id="fig-switch" role="group" aria-label="Фигура">
+        <button type="button" data-fig="female" class="active">Девушка</button>
+        <button type="button" data-fig="male">Парень</button>
+      </div>
     </div>
+    <div id="legend"><i style="background:#c8432c"></i>тесно<i style="background:#3f8f5c"></i>по фигуре / свободно</div>
+    <div id="fps">— кадр/с</div>
   </div>
   <div id="sheet">
     <div id="sheet-handle" role="button" aria-expanded="false" tabindex="0">
       <div id="sheet-grip"></div>
-      <div id="sheet-peek">
-        <div class="peek-size" id="peek-size">Размер платья: —</div>
-        <div class="peek-fit" id="fit-panel">Посадка: выберите платье</div>
-        <div class="peek-hint" id="fit-hint"></div>
-      </div>
-      <div id="sheet-chevron"></div>
-    </div>
-    <div id="sheet-peek-desk">
-      <div class="peek-size" id="peek-size-desk">Размер платья: —</div>
-      <div class="peek-fit" id="fit-panel-desk"></div>
-      <div class="peek-hint" id="fit-hint-desk"></div>
+      <div class="peek-size" id="peek-size">Вещь не добавлена</div>
+      <div class="peek-fit" id="fit-panel">Загрузите скрин таблицы размеров из карточки товара — покажу, где будет тесно.</div>
+      <button type="button" id="peek-cta">Добавить вещь</button>
     </div>
     <div id="sheet-body">
-    <div class="tabs">
-      <button type="button" class="active" data-tab="figure">Фигура</button>
-      <button type="button" data-tab="card">Карточка товара</button>
-    </div>
-
-    <div class="panel active" id="panel-figure">
-      <div class="row-toggle">
-        <button type="button" id="btn-nude" class="active">Без одежды</button>
-        <button type="button" id="btn-dress">В платье</button>
+      <div class="tabs">
+        <button type="button" class="active" data-tab="card">Вещь</button>
+        <button type="button" data-tab="figure">Мои мерки</button>
       </div>
-      <div id="size-row">
-        <span class="lbl">Размер платья:</span>
-      </div>
-      <div id="size-hint"></div>
-      <div id="chart-source">Сетка: ГОСТ (urban-s)</div>
-      <div class="row">
-        <label for="rost">Рост, см</label>
-        <div class="slider-cell">
-          <input id="rost" type="range" min="150" max="190" step="1" value="164" />
-          <div class="bounds"><span>150</span><span>190</span></div>
-        </div>
-        <span class="val" id="rost-val">164</span>
-      </div>
-      <div class="row">
-        <label for="grud">Обхват груди, см</label>
-        <div class="slider-cell">
-          <input id="grud" type="range" min="76" max="130" step="1" value="92" />
-          <div class="bounds"><span>76</span><span>130</span></div>
-        </div>
-        <span class="val" id="grud-val">92</span>
-      </div>
-      <div class="row">
-        <label for="podgrud">Обхват&nbsp;под&nbsp;грудью, см</label>
-        <div class="slider-cell">
-          <input id="podgrud" type="range" min="60" max="110" step="1" value="80" />
-          <div class="bounds"><span>60</span><span>110</span></div>
-        </div>
-        <span class="val" id="podgrud-val">80</span>
-      </div>
-      <div class="row">
-        <label for="taliya">Обхват талии, см</label>
-        <div class="slider-cell">
-          <input id="taliya" type="range" min="56" max="120" step="1" value="74" />
-          <div class="bounds"><span>56</span><span>120</span></div>
-        </div>
-        <span class="val" id="taliya-val">74</span>
-      </div>
-      <div class="row">
-        <label for="zhivot">Обхват живота, см</label>
-        <div class="slider-cell">
-          <input id="zhivot" type="range" min="60" max="130" step="1" value="80" />
-          <div class="bounds"><span>60</span><span>130</span></div>
-        </div>
-        <span class="val" id="zhivot-val">80</span>
-      </div>
-      <div class="row">
-        <label for="byodra">Обхват бёдер, см</label>
-        <div class="slider-cell">
-          <input id="byodra" type="range" min="84" max="136" step="1" value="100" />
-          <div class="bounds"><span>84</span><span>136</span></div>
-        </div>
-        <span class="val" id="byodra-val">100</span>
-      </div>
-    </div>
-
-    <div class="panel" id="panel-card">
-      <p class="hint">С маркетплейсов (WB, Ozon, Lamoda) страница часто не отдаётся из браузера. Надёжный путь на iPhone: скриншот карточки и таблицы размеров из Галереи.</p>
-      <div class="row" style="grid-template-columns: 1fr auto; margin-bottom: 8px;">
-        <input id="product-url" type="url" placeholder="Ссылка на товар (необязательно)" inputmode="url" />
-        <button type="button" id="btn-try-link" class="file-btn">Проверить</button>
-      </div>
-      <div id="link-status" class="hint"></div>
-      <div class="btn-row">
-        <button type="button" class="file-btn" id="btn-fab-pick">Фото товара → ткань</button>
-        <button type="button" class="file-btn" id="btn-chart-pick">Скрин таблицы размеров</button>
-        <input id="file-fabric" class="hidden-file" type="file" accept="image/*" />
-        <input id="file-chart" class="hidden-file" type="file" accept="image/*" />
-      </div>
-      <div class="btn-row">
-        <button type="button" id="btn-ocr" class="file-btn">Распознать таблицу (OCR)</button>
-        <button type="button" id="btn-reset-chart" class="file-btn">Сбросить на ГОСТ</button>
-        <button type="button" id="btn-clear-fabric" class="file-btn">Убрать ткань</button>
-      </div>
-      <div id="ocr-status" class="hint"></div>
-      <div id="chart-wrap">
-        <table class="chart" id="chart-table">
-          <thead>
-            <tr><th>Размер</th><th>Грудь</th><th>Талия</th><th>Бёдра</th><th>Длина</th></tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+      <div class="panel active" id="panel-card">
+        <h3>Таблица размеров из карточки</h3>
+        <p class="hint">Сделайте скриншот таблицы размеров в карточке товара (WB, Ozon, Lamoda) и загрузите его — цифры распознаются сами, их можно поправить.</p>
         <div class="btn-row">
-          <button type="button" id="btn-add-row" class="file-btn">+ строка</button>
-          <button type="button" id="btn-apply-chart" class="file-btn">Применить сетку</button>
+          <button type="button" class="file-btn primary" id="btn-chart-pick">Загрузить скрин таблицы</button>
+          <input id="file-chart" class="hidden-file" type="file" accept="image/*" />
         </div>
+        <div id="ocr-status" class="hint"></div>
+        <div class="row" style="grid-template-columns: 1fr auto; margin-bottom: 4px;">
+          <input id="product-url" type="url" placeholder="или ссылка на товар" inputmode="url" />
+          <button type="button" id="btn-try-link" class="file-btn">Проверить</button>
+        </div>
+        <div id="link-status" class="hint"></div>
+        <div id="chart-wrap">
+          <table class="chart" id="chart-table">
+            <thead><tr><th>Размер</th><th>Грудь</th><th>Талия</th><th>Бёдра</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="btn-row">
+            <button type="button" id="btn-add-row" class="file-btn">+ строка</button>
+            <button type="button" id="btn-apply-chart" class="file-btn">Пересчитать</button>
+            <button type="button" id="btn-clear-chart" class="file-btn">Убрать вещь</button>
+          </div>
+        </div>
+        <div class="btn-row"><button type="button" id="btn-manual" class="file-btn">Ввести таблицу вручную</button></div>
       </div>
-    </div>
-
-    <div id="status">Загрузка манекена…</div>
-    </div>
-  </div>
-  </div>
-
-  <div id="crop-overlay">
-    <div style="margin-bottom:8px;font-size:14px;">Вырежьте квадрат ткани (перетащите рамку)</div>
-    <div id="crop-stage">
-      <canvas id="crop-canvas"></canvas>
-      <div id="crop-box"></div>
-    </div>
-    <div id="crop-actions">
-      <button type="button" id="crop-cancel">Отмена</button>
-      <button type="button" class="primary" id="crop-apply">На платье</button>
+      <div class="panel" id="panel-figure"><div id="sliders"></div></div>
+      <div id="status">Загрузка фигуры…</div>
     </div>
   </div>
+</div>
+<script>
+  if (window.vkBridge) { try { window.vkBridge.send('VKWebAppInit'); } catch (e) {} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
-  <script>
-    if (window.vkBridge) {
-      try { window.vkBridge.send('VKWebAppInit'); } catch (e) {}
+/* Женская сетка 42–64: http://urban-s.ru/tablica-razmerov (рост 164), те же значения: https://resizes.ru/tablitsa-razmerov-gost/ */
+const GOST_FEMALE = {
+  42: { grud: 84, taliya: 66, byodra: 92 }, 44: { grud: 88, taliya: 70, byodra: 96 },
+  46: { grud: 92, taliya: 74, byodra: 100 }, 48: { grud: 96, taliya: 78, byodra: 104 },
+  50: { grud: 100, taliya: 82, byodra: 108 }, 52: { grud: 104, taliya: 86, byodra: 112 },
+  54: { grud: 108, taliya: 90, byodra: 116 }, 56: { grud: 112, taliya: 94, byodra: 120 },
+  58: { grud: 116, taliya: 98, byodra: 124 }, 60: { grud: 120, taliya: 100, byodra: 128 },
+  62: { grud: 124, taliya: 104, byodra: 132 }, 64: { grud: 128, taliya: 108, byodra: 136 },
+};
+const EASE_CM = { grud: 2, taliya: 2, zhivot: 4, byodra: 2 };
+const FIT_EPS = 1;
+
+const FIGURES = {
+  female: {
+    file: './female.glb', label: 'Девушка',
+    chart: GOST_FEMALE, chartLabel: 'ГОСТ, женская (urban-s)',
+    rostovki: [152, 158, 164, 170, 176, 182],
+    sliders: [
+      ['rost', 'Рост, см', 150, 190, 164], ['grud', 'Обхват груди, см', 76, 130, 92],
+      ['podgrud', 'Обхват под грудью, см', 60, 110, 80], ['taliya', 'Обхват талии, см', 56, 120, 74],
+      ['zhivot', 'Обхват живота, см', 60, 130, 80], ['byodra', 'Обхват бёдер, см', 84, 136, 100],
+    ],
+    bandY: { grud: 1.17, taliya: 1.04, zhivot: 0.975, byodra: 0.87 },
+    morph(m, set) {
+      const bd = Math.max(0, m.grud - m.podgrud);
+      set('breastIncr', 'breastDecr', bd, 12, 4, 28);
+      set('underbustIncr', 'underbustDecr', m.podgrud, 80, 60, 110);
+      set('waistIncr', 'waistDecr', m.taliya, 74, 56, 120);
+      set('bellyIncr', 'bellyDecr', m.zhivot, 80, 60, 130);
+      set('hipsIncr', 'hipsDecr', m.byodra, 100, 84, 136);
+    },
+    fixup(m, el) { if (m.podgrud > m.grud - 4) { m.podgrud = Math.max(60, m.grud - 4); el.podgrud.value = String(m.podgrud); } },
+  },
+};
+window.__FIGURES = FIGURES;
+
+const $ = (id) => document.getElementById(id);
+const el = {
+  sizeInfo: $('size-info'), fitPanel: $('fit-panel'), peekSize: $('peek-size'), status: $('status'),
+  wrap: $('canvas-wrap'), chartBody: document.querySelector('#chart-table tbody'), chartWrap: $('chart-wrap'),
+  ocrStatus: $('ocr-status'), linkStatus: $('link-status'), productUrl: $('product-url'), legend: $('legend'), fps: $('fps'),
+};
+let figKey = 'female';
+let fig = FIGURES[figKey];
+const state = { female: null, male: null }; // measures per figure
+let productChart = null;   // таблица из карточки {size:{grud,taliya,byodra}}
+let productLabel = '';
+
+// ---------- UI: tabs + sheet ----------
+document.querySelectorAll('.tabs button').forEach((btn) => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
+function showTab(t) {
+  document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === t));
+  document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === 'panel-' + t));
+}
+const sheet = $('sheet'), sheetHandle = $('sheet-handle');
+const isDesk = () => window.matchMedia('(min-width: 900px)').matches;
+function setSheetExpanded(on) {
+  sheet.classList.toggle('expanded', !!on);
+  sheetHandle.setAttribute('aria-expanded', on ? 'true' : 'false');
+  requestAnimationFrame(() => { resize(); fitCameraToBody(); });
+}
+function toggleSheet() { if (!isDesk()) setSheetExpanded(!sheet.classList.contains('expanded')); }
+sheetHandle.addEventListener('click', (e) => { if (e.target.id === 'peek-cta') return; toggleSheet(); });
+sheetHandle.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSheet(); } });
+$('peek-cta').addEventListener('click', (e) => { e.stopPropagation(); showTab('card'); setSheetExpanded(true); });
+let touchY0 = null;
+sheetHandle.addEventListener('touchstart', (e) => { touchY0 = e.touches[0].clientY; }, { passive: true });
+sheetHandle.addEventListener('touchend', (e) => {
+  if (touchY0 == null) return; const dy = e.changedTouches[0].clientY - touchY0; touchY0 = null;
+  if (dy < -28) setSheetExpanded(true); else if (dy > 28) setSheetExpanded(false);
+}, { passive: true });
+
+// ---------- sliders ----------
+const sl = {};
+function buildSliders() {
+  const box = $('sliders'); box.innerHTML = '';
+  for (const k in sl) delete sl[k];
+  const m = state[figKey] || Object.fromEntries(fig.sliders.map((s) => [s[0], s[4]]));
+  state[figKey] = m;
+  fig.sliders.forEach(([id, label, mn, mx]) => {
+    const row = document.createElement('div'); row.className = 'row';
+    row.innerHTML = '<label for="s-' + id + '">' + label + '</label><div class="slider-cell"><input id="s-' + id + '" type="range" min="' + mn + '" max="' + mx + '" step="1" value="' + m[id] + '" /><div class="bounds"><span>' + mn + '</span><span>' + mx + '</span></div></div><span class="val" id="v-' + id + '">' + m[id] + '</span>';
+    box.appendChild(row);
+    sl[id] = row.querySelector('input');
+    sl[id].addEventListener('input', updateAll);
+  });
+}
+
+// ---------- size logic (одна функция для ГОСТ и карточки) ----------
+function sortedSizes(chart) { return Object.keys(chart).map(Number).sort((a, b) => a - b); }
+function sizeForZone(chart, bodyCm, key) {
+  const sizes = sortedSizes(chart);
+  for (const sz of sizes) if (bodyCm <= chart[sz][key]) return sz;
+  return sizes.length ? sizes[sizes.length - 1] : null;
+}
+function recommendSize(chart, m) {
+  const sizes = sortedSizes(chart);
+  if (!sizes.length) return { size: null, outside: true };
+  const z = { grud: sizeForZone(chart, m.grud, 'grud'), taliya: sizeForZone(chart, m.taliya, 'taliya'), byodra: sizeForZone(chart, m.byodra, 'byodra') };
+  const best = Math.max(z.grud, z.taliya, z.byodra);
+  const top = chart[sizes[sizes.length - 1]];
+  const outside = m.grud > top.grud || m.taliya > top.taliya || m.byodra > top.byodra;
+  return { size: best, outside, zones: z };
+}
+function room(bodyCm, garmentCm, ease) { return (garmentCm + ease) - bodyCm; }
+function fitWord(r) {
+  if (Math.abs(r) < FIT_EPS) return { t: 'по фигуре', cls: 'ok' };
+  if (r < 0) return { t: 'тесно на ' + Math.round(-r) + ' см', cls: 'tight' };
+  return { t: 'свободно на ' + Math.round(r) + ' см', cls: 'ok' };
+}
+function rostovkaLabel(rost) {
+  const R = fig.rostovki; let best = R[0];
+  for (const r of R) if (Math.abs(rost - r) < Math.abs(rost - best)) best = r;
+  return best + (rost >= R[R.length - 1] ? ' (максимум в сетке)' : '');
+}
+
+// ---------- scene ----------
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xF4F2EC);
+const camera = new THREE.PerspectiveCamera(32, 1, 0.05, 50);
+camera.position.set(0, 1.0, 3);
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+const lowEnd = (navigator.hardwareConcurrency || 4) <= 4 || /Android/.test(navigator.userAgent) && (navigator.deviceMemory || 4) <= 3;
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, lowEnd ? 1.5 : 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+el.wrap.appendChild(renderer.domElement);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.55;
+const hemi = new THREE.HemisphereLight(0xfffaf2, 0x8f8578, 0.35); scene.add(hemi);
+const key = new THREE.DirectionalLight(0xfff1e2, 1.7);
+key.position.set(0.7, 5.0, 1.3); key.castShadow = true;
+key.shadow.mapSize.set(1024, 1024);
+Object.assign(key.shadow.camera, { left: -1.6, right: 1.6, top: 2.6, bottom: -1.6, near: 0.5, far: 10 });
+key.shadow.bias = -0.0004; key.shadow.normalBias = 0.02; key.shadow.radius = 4;
+scene.add(key); scene.add(key.target);
+const rim = new THREE.DirectionalLight(0xe4ecff, 1.0); rim.position.set(-2.2, 2.4, -2.6); scene.add(rim);
+const fill = new THREE.DirectionalLight(0xfff6ee, 0.35); fill.position.set(-2.0, 1.2, 2.0); scene.add(fill);
+// пол: мягкая тень + контактное пятно
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(8, 8), new THREE.ShadowMaterial({ opacity: 0.13 }));
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+(function contactShadow() {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const x = c.getContext('2d'); const gr = x.createRadialGradient(64, 64, 4, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(40,36,30,0.55)'); gr.addColorStop(0.5, 'rgba(40,36,30,0.18)'); gr.addColorStop(1, 'rgba(40,36,30,0)');
+  x.fillStyle = gr; x.fillRect(0, 0, 128, 128);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(0.75, 0.45), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2; m.position.y = 0.001; m.renderOrder = -1; scene.add(m);
+  window.__contact = m;
+})();
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.08; controls.enablePan = false;
+controls.maxPolarAngle = Math.PI * 0.6;
+const root = new THREE.Group(); scene.add(root);
+let cameraReady = false;
+
+function fitCameraToBody() {
+  if (!cameraReady) return;
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(root);
+  if (box.isEmpty()) return;
+  const size = new THREE.Vector3(), center = new THREE.Vector3();
+  box.getSize(size); box.getCenter(center);
+  const half = THREE.MathUtils.degToRad(camera.fov) / 2;
+  const distY = ((size.y * 1.06) / 2) / Math.tan(half);
+  const distX = ((Math.max(size.x, 0.6) * 1.12) / 2) / (Math.tan(half) * Math.max(0.2, camera.aspect));
+  const dist = Math.min(Math.max(distY, distX, 1.15), 8);
+  controls.target.set(center.x, center.y, 0);
+  camera.position.set(center.x, center.y, dist);
+  camera.near = Math.max(0.05, dist / 100); camera.far = Math.max(50, dist * 10);
+  camera.updateProjectionMatrix();
+  controls.minDistance = Math.max(0.6, dist * 0.35); controls.maxDistance = Math.max(4, dist * 2.5);
+  controls.update();
+  key.target.position.set(center.x, 0.9, 0);
+}
+
+// ---------- figure loading ----------
+const loaded = {}; // key -> {group, body, base, targets, names, weld}
+const bandUniforms = {
+  uBandY: { value: new THREE.Vector4(1.17, 1.04, 0.975, 0.87) },
+  uBandOn: { value: new THREE.Vector4(0, 0, 0, 0) },
+  uBandC0: { value: new THREE.Color(0x3f8f5c) }, uBandC1: { value: new THREE.Color(0x3f8f5c) }, uBandC2: { value: new THREE.Color(0x3f8f5c) }, uBandC3: { value: new THREE.Color(0x3f8f5c) },
+  uBandW: { value: 0.016 },
+};
+function skinMaterial(map) {
+  const m = new THREE.MeshPhysicalMaterial({
+    map, roughness: 0.5, metalness: 0, sheen: 0.35, sheenRoughness: 0.55, sheenColor: new THREE.Color(0xffd9c8),
+    specularIntensity: 0.45, envMapIntensity: 0.8,
+  });
+  m.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, bandUniforms);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float _arm;\nvarying float vY;\nvarying float vArm;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvY = position.y; vArm = _arm;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec4 uBandY; uniform vec4 uBandOn; uniform vec3 uBandC0; uniform vec3 uBandC1; uniform vec3 uBandC2; uniform vec3 uBandC3; uniform float uBandW;\nvarying float vY; varying float vArm;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        float tor = 1.0 - smoothstep(0.15, 0.4, vArm);
+        float b0 = uBandOn.x * (1.0 - smoothstep(uBandW * 0.55, uBandW, abs(vY - uBandY.x)));
+        float b1 = uBandOn.y * (1.0 - smoothstep(uBandW * 0.55, uBandW, abs(vY - uBandY.y)));
+        float b2 = uBandOn.z * (1.0 - smoothstep(uBandW * 0.55, uBandW, abs(vY - uBandY.z)));
+        diffuseColor.rgb = mix(diffuseColor.rgb, uBandC0, b0 * tor * 0.8);
+        diffuseColor.rgb = mix(diffuseColor.rgb, uBandC1, b1 * tor * 0.8);
+        float b3 = uBandOn.w * (1.0 - smoothstep(uBandW * 0.55, uBandW, abs(vY - uBandY.w)));
+        diffuseColor.rgb = mix(diffuseColor.rgb, uBandC2, b2 * tor * 0.8);
+        diffuseColor.rgb = mix(diffuseColor.rgb, uBandC3, b3 * tor * 0.8);`);
+  };
+  return m;
+}
+function prepFigure(gltf) {
+  const group = gltf.scene; let body = null;
+  group.traverse((o) => {
+    if (!o.isMesh) return;
+    const nm = (o.name || '').toLowerCase();
+    o.castShadow = true; o.receiveShadow = false;
+    const map = o.material.map || null;
+    if (map) { map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy()); }
+    if (o.morphTargetInfluences && o.geometry.morphAttributes.position) { body = o; return; }
+    if (nm.includes('hair')) {
+      o.material = new THREE.MeshStandardMaterial({ map, alphaTest: 0.25, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.62, metalness: 0, envMapIntensity: 0.6 });
+    } else if (nm.includes('eyes')) {
+      o.material = new THREE.MeshPhysicalMaterial({ map, alphaTest: 0.5, roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.05, metalness: 0 });
+      o.castShadow = false;
+    } else {
+      o.material = new THREE.MeshStandardMaterial({ map, alphaTest: 0.02, transparent: true, depthWrite: false, side: THREE.DoubleSide, roughness: 0.9, metalness: 0 });
+      o.castShadow = false; o.renderOrder = 2;
     }
-  </script>
-  <script type="module">
-    import * as THREE from 'three';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-
-    /*
-     * Сетка 42–64: http://urban-s.ru/tablica-razmerov (рост 164),
-     * те же значения: https://resizes.ru/tablitsa-razmerov-gost/
-     */
-    const GOST_CHART = {
-      42: { grud: 84, taliya: 66, byodra: 92, length: null },
-      44: { grud: 88, taliya: 70, byodra: 96, length: null },
-      46: { grud: 92, taliya: 74, byodra: 100, length: null },
-      48: { grud: 96, taliya: 78, byodra: 104, length: null },
-      50: { grud: 100, taliya: 82, byodra: 108, length: null },
-      52: { grud: 104, taliya: 86, byodra: 112, length: null },
-      54: { grud: 108, taliya: 90, byodra: 116, length: null },
-      56: { grud: 112, taliya: 94, byodra: 120, length: null },
-      58: { grud: 116, taliya: 98, byodra: 124, length: null },
-      60: { grud: 120, taliya: 100, byodra: 128, length: null },
-      62: { grud: 124, taliya: 104, byodra: 132, length: null },
-      64: { grud: 128, taliya: 108, byodra: 136, length: null },
-    };
-    const EASE_CM = { grud: 2, taliya: 2, zhivot: 4, byodra: 2 };
-    const FIT_EPS = 1;
-    const BODY_MORPHS = ['breastIncr','breastDecr','underbustIncr','underbustDecr','waistIncr','waistDecr','bellyIncr','bellyDecr','hipsIncr','hipsDecr'];
-    const DRESS_MORPHS = BODY_MORPHS.concat(['size42','size44','size48','size50','size52','size54']);
-
-    let activeChart = JSON.parse(JSON.stringify(GOST_CHART));
-    let chartLabel = 'ГОСТ (urban-s)';
-    let dressSize = 46;
-    let sizeManual = false;
-    let recommendedSize = 46;
-    let showDress = false;
-    let fabricTexture = null;
-
-    const REF = {
-      rost: 164, grud: 92, podgrud: 80, taliya: 74, zhivot: 80, byodra: 100,
-      breastDelta: 12,
-    };
-    const MIN = { rost: 150, grud: 76, podgrud: 60, taliya: 56, zhivot: 60, byodra: 84 };
-    const MAX = { rost: 190, grud: 130, podgrud: 110, taliya: 120, zhivot: 130, byodra: 136 };
-
-    const el = {
-      rost: document.getElementById('rost'),
-      grud: document.getElementById('grud'),
-      podgrud: document.getElementById('podgrud'),
-      taliya: document.getElementById('taliya'),
-      zhivot: document.getElementById('zhivot'),
-      byodra: document.getElementById('byodra'),
-      rostVal: document.getElementById('rost-val'),
-      grudVal: document.getElementById('grud-val'),
-      podgrudVal: document.getElementById('podgrud-val'),
-      taliyaVal: document.getElementById('taliya-val'),
-      zhivotVal: document.getElementById('zhivot-val'),
-      byodraVal: document.getElementById('byodra-val'),
-      fps: document.getElementById('fps'),
-      sizeInfo: document.getElementById('size-info'),
-      fitPanel: document.getElementById('fit-panel'),
-      fitHint: document.getElementById('fit-hint'),
-      sizeHint: document.getElementById('size-hint'),
-      status: document.getElementById('status'),
-      wrap: document.getElementById('canvas-wrap'),
-      btnNude: document.getElementById('btn-nude'),
-      btnDress: document.getElementById('btn-dress'),
-      sizeRow: document.getElementById('size-row'),
-      chartSource: document.getElementById('chart-source'),
-      chartBody: document.querySelector('#chart-table tbody'),
-      linkStatus: document.getElementById('link-status'),
-      ocrStatus: document.getElementById('ocr-status'),
-      productUrl: document.getElementById('product-url'),
-    };
-
-    // Tabs
-    document.querySelectorAll('.tabs button').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b === btn));
-        document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === 'panel-' + btn.dataset.tab));
-      });
-    });
-
-    // Bottom sheet (phone): collapsed by default
-    const sheet = document.getElementById('sheet');
-    const sheetHandle = document.getElementById('sheet-handle');
-    function setSheetExpanded(on) {
-      sheet.classList.toggle('expanded', !!on);
-      if (sheetHandle) sheetHandle.setAttribute('aria-expanded', on ? 'true' : 'false');
-      // resize canvas after sheet animation
-      requestAnimationFrame(() => { resize(); fitCameraToBody(); });
-    }
-    function toggleSheet() {
-      if (window.matchMedia('(min-width: 900px)').matches) return;
-      setSheetExpanded(!sheet.classList.contains('expanded'));
-    }
-    if (sheetHandle) {
-      sheetHandle.addEventListener('click', toggleSheet);
-      sheetHandle.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSheet(); }
-      });
-      // swipe up/down on handle
-      let touchY0 = null;
-      sheetHandle.addEventListener('touchstart', (e) => {
-        touchY0 = e.touches[0].clientY;
-      }, { passive: true });
-      sheetHandle.addEventListener('touchend', (e) => {
-        if (touchY0 == null) return;
-        const dy = e.changedTouches[0].clientY - touchY0;
-        touchY0 = null;
-        if (dy < -28) setSheetExpanded(true);
-        else if (dy > 28) setSheetExpanded(false);
-      }, { passive: true });
-    }
-    window.addEventListener('resize', () => {
-      if (window.matchMedia('(min-width: 900px)').matches) {
-        sheet.classList.add('expanded');
-      }
-    });
-
-    function rebuildSizeButtons() {
-      el.sizeRow.querySelectorAll('.size-btn').forEach((b) => b.remove());
-      const sizes = Object.keys(activeChart).map(Number).sort((a,b)=>a-b);
-      if (!sizes.includes(dressSize) && sizes.length) {
-        dressSize = sizes.includes(recommendedSize) ? recommendedSize : sizes[Math.floor(sizes.length/2)];
-      }
-      sizes.forEach((sz) => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        const isYours = sz === recommendedSize;
-        b.className = 'size-btn'
-          + (sz === dressSize ? ' active' : '')
-          + (isYours ? ' yours' : '');
-        b.textContent = isYours ? (String(sz) + ' · ваш') : String(sz);
-        b.title = isYours ? 'ваш размер' : '';
-        b.dataset.size = String(sz);
-        b.addEventListener('click', () => {
-          dressSize = sz;
-          sizeManual = true;
-          el.sizeRow.querySelectorAll('.size-btn').forEach((x) => {
-            const s = Number(x.dataset.size);
-            x.classList.toggle('active', s === dressSize);
-          });
-          updateLabels();
-        });
-        el.sizeRow.appendChild(b);
-      });
-      el.chartSource.textContent = 'Сетка: ' + chartLabel;
-    }
-
-    /** Подбор размера по груди/талии/бёдрам из активной сетки. */
-    // Размер = max(размер по груди, по талии, по бёдрам): первая строка сетки, куда мерка входит.
-    function sizeForZone(bodyCm, key) {
-      const sizes = Object.keys(activeChart).map(Number).sort((a, b) => a - b);
-      for (const sz of sizes) {
-        if (bodyCm <= activeChart[sz][key]) return sz;
-      }
-      return sizes.length ? sizes[sizes.length - 1] : 46;
-    }
-    function recommendSizeFromBody(grud, taliya, byodra) {
-      const sizes = Object.keys(activeChart).map(Number).sort((a, b) => a - b);
-      if (!sizes.length) return { size: 46, outside: true };
-      const sGrud = sizeForZone(grud, 'grud');
-      const sTaliya = sizeForZone(taliya, 'taliya');
-      const sByodra = sizeForZone(byodra, 'byodra');
-      const best = Math.max(sGrud, sTaliya, sByodra);
-      const minSz = sizes[0], maxSz = sizes[sizes.length - 1];
-      const gmin = activeChart[minSz], gmax = activeChart[maxSz];
-      const outside =
-        grud > gmax.grud || taliya > gmax.taliya || byodra > gmax.byodra ||
-        grud < gmin.grud - 6 || taliya < gmin.taliya - 6 || byodra < gmin.byodra - 6;
-      return { size: best, outside, zones: { grud: sGrud, taliya: sTaliya, byodra: sByodra } };
-    }
-
-    function renderChartTable() {
-      el.chartBody.innerHTML = '';
-      Object.keys(activeChart).map(Number).sort((a,b)=>a-b).forEach((sz) => {
-        const r = activeChart[sz];
-        const tr = document.createElement('tr');
-        tr.innerHTML = [sz, r.grud, r.taliya, r.byodra, r.length ?? ''].map((v,i) => {
-          const name = ['size','grud','taliya','byodra','length'][i];
-          return '<td><input type="number" data-k="'+name+'" data-sz="'+sz+'" value="'+(v??'')+'" /></td>';
-        }).join('');
-        el.chartBody.appendChild(tr);
-      });
-    }
-
-    function readChartFromTable() {
-      const next = {};
-      el.chartBody.querySelectorAll('tr').forEach((tr) => {
-        const inputs = tr.querySelectorAll('input');
-        const sz = Number(inputs[0].value);
-        if (!sz) return;
-        next[sz] = {
-          grud: Number(inputs[1].value) || 0,
-          taliya: Number(inputs[2].value) || 0,
-          byodra: Number(inputs[3].value) || 0,
-          length: inputs[4].value === '' ? null : Number(inputs[4].value),
-        };
-      });
-      return next;
-    }
-
-    function applyChart(chart, label) {
-      activeChart = chart;
-      chartLabel = label;
-      sizeManual = false;
-      rebuildSizeButtons();
-      renderChartTable();
-      updateLabels();
-    }
-
-    rebuildSizeButtons();
+  });
+  // тело: морфы считаем на CPU и пересчитываем нормали по сваренной сетке (без швов UV)
+  const geo = body.geometry;
+  const names = (body.morphTargetDictionary ? Object.keys(body.morphTargetDictionary).sort((a, b) => body.morphTargetDictionary[a] - body.morphTargetDictionary[b]) : []);
+  const base = new Float32Array(geo.attributes.position.array);
+  const targets = geo.morphAttributes.position.map((a) => a.array);
+  const ng = new THREE.BufferGeometry();
+  ng.setAttribute('position', new THREE.BufferAttribute(new Float32Array(base), 3));
+  ng.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(geo.attributes.normal.array), 3));
+  ng.setAttribute('uv', geo.attributes.uv);
+  ng.setAttribute('_arm', geo.attributes._arm || new THREE.BufferAttribute(new Float32Array(base.length / 3), 1));
+  ng.setIndex(geo.index);
+  const map = body.material.map;
+  const mesh = new THREE.Mesh(ng, skinMaterial(map));
+  mesh.name = 'Body'; mesh.castShadow = true;
+  body.parent.add(mesh); body.parent.remove(body);
+  // weld map
+  const n = base.length / 3, weld = new Int32Array(n), keyMap = new Map(); let g = 0;
+  for (let i = 0; i < n; i++) {
+    const k = Math.round(base[i * 3] * 1e5) + ',' + Math.round(base[i * 3 + 1] * 1e5) + ',' + Math.round(base[i * 3 + 2] * 1e5);
+    let id = keyMap.get(k); if (id === undefined) { id = g++; keyMap.set(k, id); } weld[i] = id;
+  }
+  return { group, body: mesh, base, targets, names, weld, nGroups: g, w: new Float32Array(targets.length) };
+}
+function applyMorphs(F) {
+  const geo = F.body.geometry, pos = geo.attributes.position.array, base = F.base;
+  pos.set(base);
+  for (let t = 0; t < F.targets.length; t++) {
+    const w = F.w[t]; if (!w) continue; const a = F.targets[t];
+    for (let j = 0; j < pos.length; j++) pos[j] += a[j] * w;
+  }
+  geo.attributes.position.needsUpdate = true;
+  // нормали по сваренным вершинам
+  const idx = geo.index.array, acc = new Float32Array(F.nGroups * 3);
+  for (let i = 0; i < idx.length; i += 3) {
+    const a = idx[i] * 3, b = idx[i + 1] * 3, c = idx[i + 2] * 3;
+    const abx = pos[b] - pos[a], aby = pos[b + 1] - pos[a + 1], abz = pos[b + 2] - pos[a + 2];
+    const acx = pos[c] - pos[a], acy = pos[c + 1] - pos[a + 1], acz = pos[c + 2] - pos[a + 2];
+    const nx = aby * acz - abz * acy, ny = abz * acx - abx * acz, nz = abx * acy - aby * acx;
+    for (const v of [idx[i], idx[i + 1], idx[i + 2]]) { const o = F.weld[v] * 3; acc[o] += nx; acc[o + 1] += ny; acc[o + 2] += nz; }
+  }
+  const nrm = geo.attributes.normal.array;
+  for (let i = 0; i < F.weld.length; i++) {
+    const o = F.weld[i] * 3, l = Math.hypot(acc[o], acc[o + 1], acc[o + 2]) || 1;
+    nrm[i * 3] = acc[o] / l; nrm[i * 3 + 1] = acc[o + 1] / l; nrm[i * 3 + 2] = acc[o + 2] / l;
+  }
+  geo.attributes.normal.needsUpdate = true;
+  geo.computeBoundingBox(); geo.computeBoundingSphere();
+}
+const loader = new GLTFLoader();
+function loadFigure(k) {
+  if (loaded[k]) return Promise.resolve(loaded[k]);
+  return new Promise((res, rej) => loader.load(FIGURES[k].file, (g) => { loaded[k] = prepFigure(g); res(loaded[k]); }, undefined, rej));
+}
+async function switchFigure(k) {
+  if (!FIGURES[k]) return;
+  el.status.textContent = 'Загрузка фигуры…';
+  document.querySelectorAll('#fig-switch button').forEach((b) => b.classList.toggle('active', b.dataset.fig === k));
+  try {
+    const F = await loadFigure(k);
+    figKey = k; fig = FIGURES[k];
+    root.clear(); root.position.set(0, 0, 0); root.scale.setScalar(1);
+    root.add(F.group);
+    buildSliders();
     renderChartTable();
+    cameraReady = true;
+    updateAll();
+    el.status.textContent = 'Крутите фигуру пальцем. Мерки — во вкладке «Мои мерки».';
+  } catch (e) {
+    console.error(e); el.status.textContent = 'Не удалось загрузить фигуру.';
+  }
+}
+document.querySelectorAll('#fig-switch button').forEach((b) => {
+  if (!FIGURES[b.dataset.fig]) { b.style.display = 'none'; return; }
+  b.addEventListener('click', () => switchFigure(b.dataset.fig));
+});
 
-    // Размер РФ в оверлее = та же рекомендация, что и для платья (max по зонам).
-    // Типовые ростовки женской одежды (шаг 6 см), верх сетки — 182.
-    const ROSTOVKI = [152, 158, 164, 170, 176, 182];
-    function rostovka(rostCm) {
-      let best = ROSTOVKI[0], bestDiff = Math.abs(rostCm - best);
-      for (const r of ROSTOVKI) {
-        const d = Math.abs(rostCm - r);
-        if (d < bestDiff) { best = r; bestDiff = d; }
-      }
-      return best;
-    }
-    function rostovkaLabel(rostCm) {
-      const r = rostovka(rostCm);
-      const maxR = ROSTOVKI[ROSTOVKI.length - 1];
-      if (rostCm >= maxR || r === maxR && rostCm > maxR - 3) {
-        return r + ' (максимум в сетке)';
-      }
-      return String(r);
-    }
-    function fitPhrase(bodyCm, garmentCm, easeCm) {
-      const room = (garmentCm + easeCm) - bodyCm;
-      if (Math.abs(room) < FIT_EPS) return 'по фигуре';
-      if (room < 0) return 'тесно на ' + Math.round(-room) + ' см';
-      return 'свободно на ' + Math.round(room) + ' см';
-    }
-    function updateFitPanel(grud, taliya, zhivot, byodra) {
-      if (!showDress) {
-        el.fitPanel.textContent = 'Посадка: включите «В платье»';
-        return;
-      }
-      const g = activeChart[dressSize];
-      if (!g) {
-        el.fitPanel.textContent = 'Нет строки размера ' + dressSize + ' в сетке';
-        return;
-      }
-      const bits = [
-        '<strong>Посадка · р.' + dressSize + '</strong>',
-        ' <span style="opacity:.75">(' + chartLabel + ')</span>',
-        ' — Грудь: ' + fitPhrase(grud, g.grud, EASE_CM.grud),
-        ' · Талия: ' + fitPhrase(taliya, g.taliya, EASE_CM.taliya),
-        ' · Живот: ' + fitPhrase(zhivot, g.taliya, EASE_CM.zhivot),
-        ' · Бёдра: ' + fitPhrase(byodra, g.byodra, EASE_CM.byodra),
-      ];
-      el.fitPanel.innerHTML = bits.join('');
-      const desk = document.getElementById('fit-panel-desk');
-      if (desk) desk.innerHTML = bits.join('');
-    }
+// ---------- main update ----------
+function readMeasures() {
+  const m = {};
+  fig.sliders.forEach(([id]) => { m[id] = +sl[id].value; });
+  if (fig.fixup) fig.fixup(m, Object.fromEntries(Object.entries(sl)));
+  fig.sliders.forEach(([id]) => { const v = $('v-' + id); if (v) v.textContent = String(m[id]); });
+  if (m.zhivot == null) m.zhivot = m.taliya;
+  state[figKey] = m; return m;
+}
+function updateAll() {
+  const F = loaded[figKey]; if (!F) return;
+  const m = readMeasures();
+  const set = (inc, dec, v, ref, mn, mx) => {
+    let a = 0, b = 0;
+    if (v >= ref) a = (v - ref) / Math.max(1e-6, mx - ref); else b = (ref - v) / Math.max(1e-6, ref - mn);
+    const ii = F.names.indexOf(inc), di = F.names.indexOf(dec);
+    if (ii >= 0) F.w[ii] = Math.max(0, Math.min(1, a));
+    if (di >= 0) F.w[di] = Math.max(0, Math.min(1, b));
+  };
+  fig.morph(m, set);
+  applyMorphs(F);
+  root.scale.setScalar(m.rost / fig.sliders[0][4]);
+  const gost = recommendSize(fig.chart, m);
+  el.sizeInfo.innerHTML = 'Размер РФ: ' + gost.size + (gost.outside ? ' (больше нет в сетке)' : '') + '<br />Ростовка: ' + rostovkaLabel(m.rost);
+  updateFit(m);
+  requestAnimationFrame(() => fitCameraToBody());
+}
+function updateFit(m) {
+  const by = fig.bandY;
+  bandUniforms.uBandY.value.set(by.grud, by.taliya, by.zhivot ?? -10, by.byodra);
+  if (!productChart || !Object.keys(productChart).length) {
+    el.peekSize.textContent = 'Вещь не добавлена';
+    el.fitPanel.textContent = 'Загрузите скрин таблицы размеров из карточки товара — покажу, где будет тесно.';
+    bandUniforms.uBandOn.value.set(0, 0, 0, 0); el.legend.style.display = 'none'; $('peek-cta').textContent = 'Добавить вещь';
+    markYours(null); return;
+  }
+  const rec = recommendSize(productChart, m);
+  const g = productChart[rec.size];
+  const zones = [['grud', 'Грудь', g.grud, EASE_CM.grud], ['taliya', 'Талия', g.taliya, EASE_CM.taliya], ['byodra', 'Бёдра', g.byodra, EASE_CM.byodra]];
+  const parts = zones.map(([k, name, gc, ease]) => { const w = fitWord(room(m[k], gc, ease)); return name + ': <b class="' + w.cls + '">' + w.t + '</b>'; });
+  if (fig.sliders.some((s) => s[0] === 'zhivot')) {
+    const w = fitWord(room(m.zhivot, g.taliya, EASE_CM.zhivot)); parts.splice(2, 0, 'Живот: <b class="' + w.cls + '">' + w.t + '</b>');
+  }
+  el.peekSize.textContent = 'Ваш размер в этой вещи: ' + rec.size + (rec.outside ? ' — больше в таблице нет' : '');
+  el.fitPanel.innerHTML = parts.join(' · ') + '<br /><span style="opacity:.7">по таблице: ' + productLabel + '</span>';
+  const C = { grud: bandUniforms.uBandC0, taliya: bandUniforms.uBandC1, zhivot: bandUniforms.uBandC2, byodra: bandUniforms.uBandC3 };
+  const rooms = { grud: room(m.grud, g.grud, EASE_CM.grud), taliya: room(m.taliya, g.taliya, EASE_CM.taliya), byodra: room(m.byodra, g.byodra, EASE_CM.byodra) };
+  if (m.zhivot != null && by.zhivot != null) rooms.zhivot = room(m.zhivot, g.taliya, EASE_CM.zhivot);
+  for (const k in C) C[k].value.set(rooms[k] != null && rooms[k] <= -FIT_EPS ? 0xc8432c : 0x3f8f5c);
+  bandUniforms.uBandOn.value.set(1, 1, rooms.zhivot != null ? 1 : 0, 1); el.legend.style.display = 'block';
+  $('peek-cta').textContent = 'Изменить вещь';
+  markYours(rec.size);
+}
 
-    function syncPeekSize() {
-      const txt = 'Платье р.' + dressSize
-        + (recommendedSize === dressSize ? ' · ваш' : '')
-        + (showDress ? '' : ' · без одежды');
-      const a = document.getElementById('peek-size');
-      const b = document.getElementById('peek-size-desk');
-      if (a) a.textContent = txt;
-      if (b) b.textContent = txt;
-      const fh = document.getElementById('fit-hint');
-      const fhd = document.getElementById('fit-hint-desk');
-      if (fhd && fh) fhd.textContent = fh.textContent;
-    }
+// ---------- chart table ----------
+function renderChartTable() {
+  el.chartBody.innerHTML = '';
+  const ch = productChart || {};
+  sortedSizes(ch).forEach((sz) => {
+    const r = ch[sz]; const tr = document.createElement('tr'); tr.dataset.size = String(sz);
+    tr.innerHTML = [sz, r.grud, r.taliya, r.byodra].map((v) => '<td><input type="number" value="' + (v ?? '') + '" /></td>').join('');
+    el.chartBody.appendChild(tr);
+  });
+  el.chartWrap.classList.toggle('on', !!productChart);
+}
+function markYours(sz) { el.chartBody.querySelectorAll('tr').forEach((tr) => tr.classList.toggle('yours', Number(tr.dataset.size) === sz)); }
+function readChartFromTable() {
+  const next = {};
+  el.chartBody.querySelectorAll('tr').forEach((tr) => {
+    const v = [...tr.querySelectorAll('input')].map((i) => Number(i.value));
+    if (!v[0] || !v[1] || !v[2] || !v[3]) return;
+    next[v[0]] = { grud: v[1], taliya: v[2], byodra: v[3] };
+  });
+  return next;
+}
+function setProductChart(chart, label) {
+  productChart = chart && Object.keys(chart).length ? chart : null; productLabel = label || 'карточка';
+  renderChartTable(); updateAll();
+}
+$('btn-apply-chart').addEventListener('click', () => {
+  const next = readChartFromTable();
+  if (!Object.keys(next).length) { el.ocrStatus.textContent = 'В таблице нет полных строк (размер, грудь, талия, бёдра).'; return; }
+  setProductChart(next, productLabel || 'карточка (вручную)'); el.ocrStatus.textContent = 'Пересчитала по таблице.';
+});
+$('btn-add-row').addEventListener('click', () => {
+  const tr = document.createElement('tr'); tr.innerHTML = '<td><input type="number" /></td>'.repeat(4); el.chartBody.appendChild(tr);
+});
+$('btn-clear-chart').addEventListener('click', () => { setProductChart(null); el.ocrStatus.textContent = ''; });
+$('btn-manual').addEventListener('click', () => {
+  if (!productChart) { productChart = {}; productLabel = 'карточка (вручную)'; }
+  renderChartTable(); el.chartWrap.classList.add('on');
+  if (!el.chartBody.children.length) for (let i = 0; i < 3; i++) $('btn-add-row').click();
+});
 
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xFAF9F4);
-    const camera = new THREE.PerspectiveCamera(35, 1, 0.05, 50);
-    camera.position.set(0, 1.0, 2.5);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    el.wrap.appendChild(renderer.domElement);
-    scene.add(new THREE.HemisphereLight(0xffffff, 0xc9c4b8, 1.05));
-    const dir = new THREE.DirectionalLight(0xffffff, 0.75);
-    dir.position.set(1.6, 3.2, 2.0); scene.add(dir);
-    const fill = new THREE.DirectionalLight(0xffffff, 0.25);
-    fill.position.set(-2.0, 1.5, -1.0); scene.add(fill);
+// ---------- link ----------
+$('btn-try-link').addEventListener('click', async () => {
+  const url = (el.productUrl.value || '').trim();
+  if (!url) { el.linkStatus.textContent = 'Вставьте ссылку на товар.'; return; }
+  el.linkStatus.textContent = 'Проверяю ссылку…';
+  try {
+    const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 8000);
+    const res = await fetch(url, { mode: 'cors', signal: ctrl.signal }); clearTimeout(t);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    el.linkStatus.textContent = 'Страница ответила, но таблицу размеров из неё пока не достать. Загрузите скрин таблицы.';
+  } catch (err) {
+    el.linkStatus.textContent = 'Маркетплейс не отдаёт карточку в браузер. Сделайте скрин таблицы размеров и загрузите его кнопкой выше.';
+  }
+});
 
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true; controls.dampingFactor = 0.08;
-    controls.target.set(0, 0.9, 0);
-    controls.minDistance = 1.0; controls.maxDistance = 4.5;
-    controls.maxPolarAngle = Math.PI * 0.92; controls.enablePan = false;
-    controls.minAzimuthAngle = -Infinity; controls.maxAzimuthAngle = Infinity;
+// ---------- OCR ----------
+let tesseractLoading = null;
+function getTesseract() {
+  if (window.Tesseract) return Promise.resolve(window.Tesseract);
+  if (tesseractLoading) return tesseractLoading;
+  tesseractLoading = new Promise((res, rej) => {
+    const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    s.onload = () => res(window.Tesseract); s.onerror = () => rej(new Error('Не удалось загрузить распознавание')); document.head.appendChild(s);
+  });
+  return tesseractLoading;
+}
+function parseSizeChartText(text) {
+  const chart = {};
+  for (const line of text.split(/\n+/)) {
+    const nums = (line.match(/\d{2,3}/g) || []).map(Number);
+    if (nums.length < 4) continue;
+    const si = nums.findIndex((n) => n >= 40 && n <= 64 && n % 2 === 0);
+    if (si < 0) continue;
+    const rest = nums.slice(si + 1).filter((n) => n >= 50 && n <= 160);
+    if (rest.length < 3) continue;
+    chart[nums[si]] = { grud: rest[0], taliya: rest[1], byodra: rest[2] };
+  }
+  return chart;
+}
+function loadImageFromFile(file) {
+  return new Promise((res, rej) => { const u = URL.createObjectURL(file); const i = new Image(); i.onload = () => { URL.revokeObjectURL(u); res(i); }; i.onerror = rej; i.src = u; });
+}
+$('btn-chart-pick').addEventListener('click', () => $('file-chart').click());
+$('file-chart').addEventListener('change', async (e) => {
+  const f = e.target.files && e.target.files[0]; if (!f) return; e.target.value = '';
+  el.ocrStatus.textContent = 'Скрин загружен. Распознаю цифры (в первый раз дольше)…';
+  try {
+    const T = await getTesseract();
+    const r = await T.recognize(f, 'rus+eng', { logger: (m) => { if (m.status === 'recognizing text' && m.progress != null) el.ocrStatus.textContent = 'Распознаю… ' + Math.round(m.progress * 100) + '%'; } });
+    const parsed = parseSizeChartText(r.data.text || '');
+    if (!Object.keys(parsed).length) {
+      el.ocrStatus.textContent = 'Не нашла строки размеров на скрине. Введите таблицу вручную.'; $('btn-manual').click(); return;
+    }
+    setProductChart(parsed, 'скрин карточки');
+    el.ocrStatus.textContent = 'Нашла ' + Object.keys(parsed).length + ' размеров. Сверьте цифры со скрином; если поправили — «Пересчитать».';
+  } catch (err) {
+    console.error(err); el.ocrStatus.textContent = 'Распознавание недоступно (' + (err.message || err) + '). Введите таблицу вручную.'; $('btn-manual').click();
+  }
+});
 
-    const root = new THREE.Group(); scene.add(root);
-    let bodyMesh = null, dressMesh = null, bodyMorph = {}, dressMorph = {};
-    let cameraReady = false;
+// ---------- resize/render ----------
+function resize() {
+  const w = el.wrap.clientWidth || window.innerWidth, h = el.wrap.clientHeight || Math.max(200, window.innerHeight - 200);
+  camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix(); renderer.setSize(w, h, false);
+  if (cameraReady) fitCameraToBody();
+}
+window.addEventListener('resize', () => { if (isDesk()) sheet.classList.add('expanded'); resize(); });
+resize();
+let frames = 0, lastFps = performance.now(), slowTicks = 0, degraded = false;
+// слабое устройство: если 3 с подряд < 22 кадр/с — убрать тени и уменьшить разрешение
+function degrade() {
+  degraded = true;
+  renderer.shadowMap.enabled = false; key.castShadow = false; floor.visible = false;
+  renderer.setPixelRatio(1);
+  root.traverse((o) => { if (o.isMesh && o.material) { o.material.needsUpdate = true; if (o.material.sheen) o.material.sheen = 0; } });
+  resize();
+}
+window.__degrade = () => degrade();
+function animate() {
+  requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); frames++;
+  const now = performance.now();
+  if (now - lastFps >= 500) {
+    const fps = Math.round((frames * 1000) / (now - lastFps));
+    el.fps.textContent = fps + ' кадр/с' + (degraded ? ' · упрощённый свет' : ''); frames = 0; lastFps = now;
+    if (cameraReady && !degraded && !/hq=1/.test(location.search)) { slowTicks = fps < 22 ? slowTicks + 1 : 0; if (slowTicks >= 6) degrade(); }
+  }
+}
+animate();
+if (isDesk()) sheet.classList.add('expanded');
+switchFigure('female');
 
-    function fitCameraToBody() {
-      if (!cameraReady || !root) return;
-      root.updateMatrixWorld(true);
-      const box = new THREE.Box3().setFromObject(root);
-      if (box.isEmpty()) return;
-      const size = new THREE.Vector3();
-      const center = new THREE.Vector3();
-      box.getSize(size);
-      box.getCenter(center);
-      // тугой кадр: фигура заполняет высоту (манекен — главное)
-      const marginY = 1.06;
-      const marginX = 1.12;
-      const fov = THREE.MathUtils.degToRad(camera.fov);
-      const half = fov / 2;
-      const distY = ((size.y * marginY) / 2) / Math.tan(half);
-      const distX = ((size.x * marginX) / 2) / (Math.tan(half) * Math.max(0.2, camera.aspect));
-      let dist = Math.max(distY, distX, 1.15);
-      dist = Math.min(dist, 7.5);
-      controls.target.set(center.x, center.y, 0);
-      // фронт; сохраняем лёгкий подъём камеры к центру фигуры
-      camera.position.set(center.x, center.y, dist);
-      camera.near = Math.max(0.05, dist / 100);
-      camera.far = Math.max(50, dist * 10);
-      camera.updateProjectionMatrix();
-      controls.minDistance = Math.max(0.8, dist * 0.45);
-      controls.maxDistance = Math.max(4, dist * 2.8);
-      controls.update();
-    }
-
-    function setBi(mesh, morphIndex, incrName, decrName, value, ref, minV, maxV) {
-      if (!mesh || !mesh.morphTargetInfluences) return;
-      const ii = morphIndex[incrName], di = morphIndex[decrName];
-      let incr = 0, decr = 0;
-      if (value >= ref) incr = (value - ref) / Math.max(1e-6, maxV - ref);
-      else decr = (ref - value) / Math.max(1e-6, ref - minV);
-      incr = Math.max(0, Math.min(1, incr));
-      decr = Math.max(0, Math.min(1, decr));
-      if (ii != null) mesh.morphTargetInfluences[ii] = incr;
-      if (di != null) mesh.morphTargetInfluences[di] = decr;
-    }
-    // --- Платье следует поверхности тела по нормали (bind MHCLO), не «фартук» ---
-    let dressBind = null; // {binds, gap, tang, bodyHeight, refCm}
-    let dressRestPos = null; // Float32Array rest positions
-    let bodyRestPos = null; // Float32Array body rest positions
-    let bodyIndexArr = null; // Uint16/32 face indices for normal compute
-
-
-    function circCmToRadial(cm) {
-      const unit = (dressBind ? dressBind.bodyHeight / dressBind.refCm : 0.0098);
-      return (cm * unit) / (2 * Math.PI);
-    }
-
-    function getMorphedPosArray(mesh) {
-      const base = mesh.geometry.attributes.position;
-      const out = new Float32Array(base.array.length);
-      out.set(base.array);
-      const morphs = mesh.geometry.morphAttributes.position;
-      const infl = mesh.morphTargetInfluences;
-      if (!morphs || !infl) return out;
-      for (let mi = 0; mi < morphs.length; mi++) {
-        const w = infl[mi];
-        if (!w) continue;
-        const arr = morphs[mi].array;
-        for (let j = 0; j < out.length; j++) out[j] += arr[j] * w;
-      }
-      return out;
-    }
-
-    function computeVertexNormals(pos, index) {
-      const n = pos.length / 3;
-      const normals = new Float32Array(pos.length);
-      for (let i = 0; i < index.length; i += 3) {
-        const a = index[i] * 3, b = index[i + 1] * 3, c = index[i + 2] * 3;
-        const ax = pos[a], ay = pos[a + 1], az = pos[a + 2];
-        const bx = pos[b], by = pos[b + 1], bz = pos[b + 2];
-        const cx = pos[c], cy = pos[c + 1], cz = pos[c + 2];
-        const abx = bx - ax, aby = by - ay, abz = bz - az;
-        const acx = cx - ax, acy = cy - ay, acz = cz - az;
-        const nx = aby * acz - abz * acy;
-        const ny = abz * acx - abx * acz;
-        const nz = abx * acy - aby * acx;
-        normals[a] += nx; normals[a + 1] += ny; normals[a + 2] += nz;
-        normals[b] += nx; normals[b + 1] += ny; normals[b + 2] += nz;
-        normals[c] += nx; normals[c + 1] += ny; normals[c + 2] += nz;
-      }
-      for (let i = 0; i < n; i++) {
-        const o = i * 3;
-        const len = Math.hypot(normals[o], normals[o + 1], normals[o + 2]) || 1;
-        normals[o] /= len; normals[o + 1] /= len; normals[o + 2] /= len;
-      }
-      return normals;
-    }
-
-    function clearAllDressMorphs() {
-      if (!dressMesh || !dressMesh.morphTargetInfluences) return;
-      for (let i = 0; i < dressMesh.morphTargetInfluences.length; i++) {
-        dressMesh.morphTargetInfluences[i] = 0;
-      }
-    }
-
-    function conformDressToBody(grud, taliya, zhivot, byodra) {
-      if (!dressMesh || !bodyMesh || !dressBind || !dressRestPos || !bodyRestPos) return;
-      const g = activeChart[dressSize];
-      if (!g) return;
-
-      // Доп. радиальный запас от сетки (сверх rest MHCLO), min ~0.8 см.
-      const roomCirc = Math.max(
-        EASE_CM.grud + Math.max(0, g.grud - grud),
-        EASE_CM.taliya + Math.max(0, g.taliya - taliya),
-        EASE_CM.zhivot + Math.max(0, g.taliya - zhivot),
-        EASE_CM.byodra + Math.max(0, g.byodra - byodra)
-      );
-      const extraEase = circCmToRadial(Math.max(1.0, Math.min(3.5, EASE_CM.byodra * 0.6 + Math.min(roomCirc, 8) * 0.12)));
-
-      const bodyPos = getMorphedPosArray(bodyMesh);
-      if (!bodyIndexArr) {
-        const idxAttr = bodyMesh.geometry.index;
-        bodyIndexArr = idxAttr ? idxAttr.array : null;
-      }
-      if (!bodyIndexArr) return;
-      const bodyN = computeVertexNormals(bodyPos, bodyIndexArr);
-
-      const binds = dressBind.binds;
-      const posAttr = dressMesh.geometry.attributes.position;
-      const out = posAttr.array;
-      const nv = binds.length;
-      const restD = dressRestPos;
-      const restB = bodyRestPos;
-
-      // Классический MHCLO follow: rest_dress + (body_now - body_rest) + ease*normal.
-      // Сохраняет форму платья относительно тела во всех направлениях (не только ширина).
-      for (let i = 0; i < nv; i++) {
-        const bi = binds[i];
-        const bo = bi * 3;
-        const io = i * 3;
-        const dx = bodyPos[bo] - restB[bo];
-        const dy = bodyPos[bo + 1] - restB[bo + 1];
-        const dz = bodyPos[bo + 2] - restB[bo + 2];
-        const nx = bodyN[bo], ny = bodyN[bo + 1], nz = bodyN[bo + 2];
-        out[io]     = restD[io]     + dx + nx * extraEase;
-        out[io + 1] = restD[io + 1] + dy + ny * extraEase;
-        out[io + 2] = restD[io + 2] + dz + nz * extraEase;
-      }
-      posAttr.needsUpdate = true;
-      dressMesh.geometry.computeVertexNormals();
-      if (dressMesh.geometry.attributes.normal) dressMesh.geometry.attributes.normal.needsUpdate = true;
-      dressMesh.scale.setScalar(1);
-    }
-
-    function applyDressSizeAndBody(grud, podgrud, taliya, zhivot, byodra) {
-      if (!dressMesh) return;
-      clearAllDressMorphs();
-      conformDressToBody(grud, taliya, zhivot, byodra);
-    }
-
-    function applyProportions(rost, grud, podgrud, taliya, zhivot, byodra) {
-      if (bodyMesh) {
-        const breastDelta = Math.max(0, grud - podgrud);
-        const breastDeltaMax = Math.max(8, MAX.grud - MIN.podgrud);
-        setBi(bodyMesh, bodyMorph, 'breastIncr', 'breastDecr', breastDelta, REF.breastDelta, 4, Math.min(28, breastDeltaMax));
-        setBi(bodyMesh, bodyMorph, 'underbustIncr', 'underbustDecr', podgrud, REF.podgrud, MIN.podgrud, MAX.podgrud);
-        setBi(bodyMesh, bodyMorph, 'waistIncr', 'waistDecr', taliya, REF.taliya, MIN.taliya, MAX.taliya);
-        setBi(bodyMesh, bodyMorph, 'bellyIncr', 'bellyDecr', zhivot, REF.zhivot, MIN.zhivot, MAX.zhivot);
-        setBi(bodyMesh, bodyMorph, 'hipsIncr', 'hipsDecr', byodra, REF.byodra, MIN.byodra, MAX.byodra);
-      }
-      applyDressSizeAndBody(grud, podgrud, taliya, zhivot, byodra);
-      root.scale.setScalar(rost / REF.rost);
-    }
-    function updateLabels() {
-      if (+el.podgrud.value > +el.grud.value - 4) {
-        el.podgrud.value = String(Math.max(MIN.podgrud, +el.grud.value - 4));
-      }
-      const rost = +el.rost.value, grud = +el.grud.value, podgrud = +el.podgrud.value;
-      const taliya = +el.taliya.value, zhivot = +el.zhivot.value, byodra = +el.byodra.value;
-      el.rostVal.textContent = String(rost);
-      el.grudVal.textContent = String(grud);
-      el.podgrudVal.textContent = String(podgrud);
-      el.taliyaVal.textContent = String(taliya);
-      el.zhivotVal.textContent = String(zhivot);
-      el.byodraVal.textContent = String(byodra);
-
-      const rec = recommendSizeFromBody(grud, taliya, byodra);
-      recommendedSize = rec.size;
-      if (!sizeManual) {
-        dressSize = recommendedSize;
-      }
-      el.sizeInfo.innerHTML = 'Размер РФ: ' + recommendedSize + '<br />Ростовка: ' + rostovkaLabel(rost);
-      // обновить подписи кнопок (ваш размер)
-      el.sizeRow.querySelectorAll('.size-btn').forEach((x) => {
-        const s = Number(x.dataset.size);
-        const isYours = s === recommendedSize;
-        x.classList.toggle('active', s === dressSize);
-        x.classList.toggle('yours', isYours);
-        x.textContent = isYours ? (String(s) + ' · ваш') : String(s);
-        x.title = isYours ? 'ваш размер' : '';
-      });
-      if (el.sizeHint) {
-        if (rec.outside) {
-          el.sizeHint.textContent = 'В сетке нет твоего размера — ближайший р.' + recommendedSize
-            + (sizeManual && dressSize !== recommendedSize ? '. Выбран вручную р.' + dressSize : '');
-        } else if (sizeManual && dressSize !== recommendedSize) {
-          el.sizeHint.textContent = 'Ваш размер по меркам — р.' + recommendedSize + ' (сейчас выбран р.' + dressSize + ')';
-        } else {
-          el.sizeHint.textContent = 'По меркам рекомендован р.' + recommendedSize;
-        }
-      }
-      applyProportions(rost, grud, podgrud, taliya, zhivot, byodra);
-      updateFitPanel(grud, taliya, zhivot, byodra);
-      if (el.fitHint) {
-        el.fitHint.textContent = rec.outside ? 'В сетке нет твоего размера' : '';
-      }
-      syncPeekSize();
-      // камера после морфов/скейла
-      requestAnimationFrame(() => fitCameraToBody());
-    }
-    function setDressVisible(on) {
-      showDress = on;
-      if (dressMesh) dressMesh.visible = on;
-      // Чуть ужать тело под платьем — иначе mid-poly дырки между трисами платья.
-      if (bodyMesh) bodyMesh.scale.setScalar(on ? 0.988 : 1);
-      el.btnNude.classList.toggle('active', !on);
-      el.btnDress.classList.toggle('active', on);
-      updateLabels();
-          if (on && bodyMesh) {
-        const rost = +el.rost.value, grud = +el.grud.value, podgrud = +el.podgrud.value;
-        const taliya = +el.taliya.value, zhivot = +el.zhivot.value, byodra = +el.byodra.value;
-        applyDressSizeAndBody(grud, podgrud, taliya, zhivot, byodra);
-        updateFitPanel(grud, taliya, zhivot, byodra);
-        syncPeekSize();
-      }
-    }
-    el.btnNude.addEventListener('click', () => setDressVisible(false));
-    el.btnDress.addEventListener('click', () => setDressVisible(true));
-
-    function resize() {
-      const w = el.wrap.clientWidth || window.innerWidth;
-      const h = el.wrap.clientHeight || Math.max(200, window.innerHeight - 360);
-      camera.aspect = w / Math.max(1, h);
-      camera.updateProjectionMatrix();
-      renderer.setSize(w, h, false);
-      if (cameraReady) fitCameraToBody();
-    }
-    window.addEventListener('resize', resize); resize();
-    ['rost','grud','podgrud','taliya','zhivot','byodra'].forEach((id) => el[id].addEventListener('input', updateLabels));
-
-    // --- Fabric UVs + texture ---
-    function ensureDressUVs(mesh, tile = 3.5) {
-      const geo = mesh.geometry;
-      const pos = geo.attributes.position;
-      geo.computeBoundingBox();
-      const bb = geo.boundingBox;
-      const uvs = new Float32Array(pos.count * 2);
-      for (let i = 0; i < pos.count; i++) {
-        const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-        let u = Math.atan2(z, x) / (Math.PI * 2) + 0.5;
-        let v = (y - bb.min.y) / Math.max(1e-6, bb.max.y - bb.min.y);
-        uvs[i * 2] = u * tile;
-        uvs[i * 2 + 1] = v * tile;
-      }
-      geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
-      geo.attributes.uv.needsUpdate = true;
-    }
-    function applyFabricTexture(imageOrCanvas) {
-      if (!dressMesh) return;
-      ensureDressUVs(dressMesh, 3.5);
-      if (fabricTexture) fabricTexture.dispose();
-      fabricTexture = new THREE.CanvasTexture(imageOrCanvas);
-      fabricTexture.colorSpace = THREE.SRGBColorSpace;
-      fabricTexture.wrapS = fabricTexture.wrapT = THREE.RepeatWrapping;
-      fabricTexture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
-      fabricTexture.needsUpdate = true;
-      const mat = dressMesh.material;
-      mat.map = fabricTexture;
-      mat.color.set(0xffffff);
-      mat.needsUpdate = true;
-      setDressVisible(true);
-      el.status.textContent = 'Ткань нанесена на платье (тайл).';
-    }
-    function clearFabric() {
-      if (!dressMesh) return;
-      if (fabricTexture) { fabricTexture.dispose(); fabricTexture = null; }
-      dressMesh.material.map = null;
-      dressMesh.material.color.set(0x5a6b7a);
-      dressMesh.material.needsUpdate = true;
-      el.status.textContent = 'Ткань снята.';
-    }
-
-    // --- Crop UI ---
-    const crop = {
-      overlay: document.getElementById('crop-overlay'),
-      canvas: document.getElementById('crop-canvas'),
-      box: document.getElementById('crop-box'),
-      stage: document.getElementById('crop-stage'),
-      img: null,
-      scale: 1,
-      ox: 0, oy: 0,
-      boxSize: 120, bx: 0, by: 0,
-      dragging: false, dx: 0, dy: 0,
-    };
-    function openCrop(img) {
-      crop.img = img;
-      crop.overlay.classList.add('open');
-      requestAnimationFrame(() => layoutCrop());
-    }
-    function layoutCrop() {
-      if (!crop.img) return;
-      const stage = crop.stage.getBoundingClientRect();
-      const sw = stage.width, sh = stage.height;
-      const iw = crop.img.naturalWidth || crop.img.width;
-      const ih = crop.img.naturalHeight || crop.img.height;
-      crop.scale = Math.min(sw / iw, sh / ih);
-      const dw = iw * crop.scale, dh = ih * crop.scale;
-      crop.ox = (sw - dw) / 2; crop.oy = (sh - dh) / 2;
-      const c = crop.canvas;
-      c.width = sw; c.height = sh;
-      const ctx = c.getContext('2d');
-      ctx.clearRect(0,0,sw,sh);
-      ctx.fillStyle = '#111'; ctx.fillRect(0,0,sw,sh);
-      ctx.drawImage(crop.img, crop.ox, crop.oy, dw, dh);
-      crop.boxSize = Math.min(dw, dh) * 0.36;
-      crop.bx = crop.ox + (dw - crop.boxSize) / 2;
-      crop.by = crop.oy + (dh - crop.boxSize) / 2;
-      placeCropBox();
-    }
-    function placeCropBox() {
-      crop.box.style.left = crop.bx + 'px';
-      crop.box.style.top = crop.by + 'px';
-      crop.box.style.width = crop.boxSize + 'px';
-      crop.box.style.height = crop.boxSize + 'px';
-    }
-    function clampCropBox() {
-      const stage = crop.stage.getBoundingClientRect();
-      const iw = (crop.img.naturalWidth || crop.img.width) * crop.scale;
-      const ih = (crop.img.naturalHeight || crop.img.height) * crop.scale;
-      crop.bx = Math.max(crop.ox, Math.min(crop.ox + iw - crop.boxSize, crop.bx));
-      crop.by = Math.max(crop.oy, Math.min(crop.oy + ih - crop.boxSize, crop.by));
-    }
-    function onCropPointerDown(e) {
-      crop.dragging = true;
-      const p = e.touches ? e.touches[0] : e;
-      const rect = crop.stage.getBoundingClientRect();
-      crop.dx = p.clientX - rect.left - crop.bx;
-      crop.dy = p.clientY - rect.top - crop.by;
-      e.preventDefault();
-    }
-    function onCropPointerMove(e) {
-      if (!crop.dragging) return;
-      const p = e.touches ? e.touches[0] : e;
-      const rect = crop.stage.getBoundingClientRect();
-      crop.bx = p.clientX - rect.left - crop.dx;
-      crop.by = p.clientY - rect.top - crop.dy;
-      clampCropBox(); placeCropBox();
-      e.preventDefault();
-    }
-    function onCropPointerUp() { crop.dragging = false; }
-    crop.box.addEventListener('mousedown', onCropPointerDown);
-    crop.box.addEventListener('touchstart', onCropPointerDown, { passive: false });
-    window.addEventListener('mousemove', onCropPointerMove);
-    window.addEventListener('touchmove', onCropPointerMove, { passive: false });
-    window.addEventListener('mouseup', onCropPointerUp);
-    window.addEventListener('touchend', onCropPointerUp);
-    document.getElementById('crop-cancel').addEventListener('click', () => crop.overlay.classList.remove('open'));
-    document.getElementById('crop-apply').addEventListener('click', () => {
-      if (!crop.img) return;
-      const iw = crop.img.naturalWidth || crop.img.width;
-      const sx = (crop.bx - crop.ox) / crop.scale;
-      const sy = (crop.by - crop.oy) / crop.scale;
-      const ss = crop.boxSize / crop.scale;
-      const out = document.createElement('canvas');
-      out.width = 256; out.height = 256;
-      const ctx = out.getContext('2d');
-      ctx.drawImage(crop.img, sx, sy, ss, ss, 0, 0, 256, 256);
-      applyFabricTexture(out);
-      crop.overlay.classList.remove('open');
-    });
-
-    function loadImageFromFile(file) {
-      return new Promise((res, rej) => {
-        const url = URL.createObjectURL(file);
-        const img = new Image();
-        img.onload = () => { URL.revokeObjectURL(url); res(img); };
-        img.onerror = rej;
-        img.src = url;
-      });
-    }
-    document.getElementById('btn-fab-pick').addEventListener('click', () => document.getElementById('file-fabric').click());
-    document.getElementById('btn-chart-pick').addEventListener('click', () => document.getElementById('file-chart').click());
-    document.getElementById('file-fabric').addEventListener('change', async (e) => {
-      const f = e.target.files && e.target.files[0];
-      if (!f) return;
-      const img = await loadImageFromFile(f);
-      openCrop(img);
-      e.target.value = '';
-    });
-    document.getElementById('file-chart').addEventListener('change', async (e) => {
-      const f = e.target.files && e.target.files[0];
-      if (!f) return;
-      window.__lastChartImage = await loadImageFromFile(f);
-      el.ocrStatus.textContent = 'Скрин таблицы загружен. Можно править вручную или нажать «Распознать».';
-      e.target.value = '';
-    });
-    document.getElementById('btn-clear-fabric').addEventListener('click', clearFabric);
-    document.getElementById('btn-reset-chart').addEventListener('click', () => {
-      applyChart(JSON.parse(JSON.stringify(GOST_CHART)), 'ГОСТ (urban-s)');
-      el.ocrStatus.textContent = 'Сетка сброшена на ГОСТ.';
-    });
-    document.getElementById('btn-apply-chart').addEventListener('click', () => {
-      const next = readChartFromTable();
-      if (!Object.keys(next).length) {
-        el.ocrStatus.textContent = 'Таблица пуста.';
-        return;
-      }
-      applyChart(next, 'карточка товара');
-      el.ocrStatus.textContent = 'Сетка с карточки применена.';
-    });
-    document.getElementById('btn-add-row').addEventListener('click', () => {
-      const sizes = Object.keys(activeChart).map(Number);
-      const n = (sizes.length ? Math.max(...sizes) : 40) + 2;
-      activeChart[n] = { grud: 0, taliya: 0, byodra: 0, length: null };
-      renderChartTable();
-    });
-
-    // Link try
-    document.getElementById('btn-try-link').addEventListener('click', async () => {
-      const url = (el.productUrl.value || '').trim();
-      if (!url) {
-        el.linkStatus.textContent = 'Вставьте ссылку или загрузите скриншоты из Галереи.';
-        return;
-      }
-      el.linkStatus.textContent = 'Проверяю ссылку…';
-      try {
-        const ctrl = new AbortController();
-        const t = setTimeout(() => ctrl.abort(), 8000);
-        const res = await fetch(url, { mode: 'cors', signal: ctrl.signal });
-        clearTimeout(t);
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        el.linkStatus.textContent = 'Ссылка отвечает, но разбор карточки маркетплейса с Pages недоступен. Загрузите скриншоты фото и таблицы размеров.';
-      } catch (err) {
-        el.linkStatus.textContent = 'Маркетплейс не отдал данные в браузер (CORS/блок). На iPhone: сделайте скриншоты карточки и таблицы размеров и загрузите кнопками выше.';
-      }
-    });
-
-    // OCR lazy
-    let tesseractLoading = null;
-    async function getTesseract() {
-      if (window.Tesseract) return window.Tesseract;
-      if (tesseractLoading) return tesseractLoading;
-      tesseractLoading = new Promise((res, rej) => {
-        const s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
-        s.onload = () => res(window.Tesseract);
-        s.onerror = () => rej(new Error('Не удалось загрузить OCR'));
-        document.head.appendChild(s);
-      });
-      return tesseractLoading;
-    }
-    function parseSizeChartText(text) {
-      const chart = {};
-      const lines = text.split(/\n+/);
-      for (const line of lines) {
-        const nums = (line.match(/\d{2,3}/g) || []).map(Number);
-        if (nums.length < 4) continue;
-        // find size-like first number 40..60 even
-        let si = nums.findIndex((n) => n >= 40 && n <= 64 && n % 2 === 0);
-        if (si < 0) continue;
-        const sz = nums[si];
-        const rest = nums.slice(si + 1).filter((n) => n >= 50 && n <= 160);
-        if (rest.length < 3) continue;
-        chart[sz] = {
-          grud: rest[0],
-          taliya: rest[1],
-          byodra: rest[2],
-          length: rest[3] != null ? rest[3] : null,
-        };
-      }
-      return chart;
-    }
-    document.getElementById('btn-ocr').addEventListener('click', async () => {
-      if (!window.__lastChartImage) {
-        el.ocrStatus.textContent = 'Сначала загрузите скрин таблицы размеров.';
-        return;
-      }
-      el.ocrStatus.textContent = 'Загружаю OCR (первый раз может занять время)…';
-      try {
-        const T = await getTesseract();
-        el.ocrStatus.textContent = 'Распознаю…';
-        const result = await T.recognize(window.__lastChartImage, 'rus+eng', {
-          logger: (m) => {
-            if (m.status === 'recognizing text' && m.progress != null) {
-              el.ocrStatus.textContent = 'Распознаю… ' + Math.round(m.progress * 100) + '%';
-            }
-          },
-        });
-        const parsed = parseSizeChartText(result.data.text || '');
-        if (!Object.keys(parsed).length) {
-          el.ocrStatus.textContent = 'Не удалось вытащить строки размеров. Заполните таблицу вручную по скрину.';
-          return;
-        }
-        // merge into table for editing
-        applyChart(parsed, 'карточка (OCR)');
-        el.ocrStatus.textContent = 'OCR нашёл ' + Object.keys(parsed).length + ' размеров — проверьте числа и нажмите «Применить сетку» при правках.';
-      } catch (e) {
-        console.error(e);
-        el.ocrStatus.textContent = 'OCR недоступен (' + (e.message || e) + '). Введите таблицу вручную.';
-      }
-    });
-
-    // Test hooks
-    window.__setMeasures = (rost, grud, podgrud, taliya, zhivot, byodra) => {
-      el.rost.value = rost; el.grud.value = grud; el.podgrud.value = podgrud;
-      el.taliya.value = taliya; el.zhivot.value = zhivot; el.byodra.value = byodra;
-      updateLabels();
-    };
-    window.__setDress = (on, size, manual) => {
-      if (size != null) {
-        dressSize = Number(size);
-        sizeManual = manual !== false;
-        el.sizeRow.querySelectorAll('.size-btn').forEach((x) => x.classList.toggle('active', Number(x.dataset.size) === dressSize));
-      }
-      setDressVisible(!!on);
-    };
-    window.__fitCamera = () => fitCameraToBody();
-    window.__applyFabricFromUrl = async (url) => {
-      const img = await new Promise((res, rej) => {
-        const i = new Image();
-        i.crossOrigin = 'anonymous';
-        i.onload = () => res(i); i.onerror = rej; i.src = url;
-      });
-      // auto center crop square
-      const side = Math.min(img.naturalWidth, img.naturalHeight) * 0.4;
-      const sx = (img.naturalWidth - side) / 2;
-      const sy = (img.naturalHeight - side) / 2;
-      const out = document.createElement('canvas');
-      out.width = 256; out.height = 256;
-      out.getContext('2d').drawImage(img, sx, sy, side, side, 0, 0, 256, 256);
-      applyFabricTexture(out);
-    };
-    window.__setProductChart = (chart, label) => applyChart(chart, label || 'карточка');
-    window.__getFitText = () => el.fitPanel.innerText;
-    window.__sizeInfoText = () => el.sizeInfo.innerText;
-    window.__gapFront = () => {
-      const bp = getMorphedPosArray(bodyMesh);
-      const dp = dressMesh.geometry.attributes.position.array;
-      const binds = dressBind.binds;
-      const rows = [];
-      for (let i = 0; i < binds.length; i++) {
-        const x = dressRestPos[i * 3], y = dressRestPos[i * 3 + 1], z = dressRestPos[i * 3 + 2];
-        const y01 = (y - 0.48) / (1.39 - 0.48);
-        if (y01 > 0.38 && y01 < 0.58 && z > 0.02 && Math.abs(x) < 0.1) {
-          const bi = binds[i], bo = bi * 3, io = i * 3;
-          rows.push({ i, dZ: +dp[io + 2].toFixed(4), bZ: +bp[bo + 2].toFixed(4), gapZ: +(dp[io + 2] - bp[bo + 2]).toFixed(4) });
-        }
-      }
-      rows.sort((a, b) => b.gapZ - a.gapZ);
-      const mean = rows.reduce((s, r) => s + r.gapZ, 0) / (rows.length || 1);
-      return { n: rows.length, meanGapZ: +mean.toFixed(4), top: rows.slice(0, 8) };
-    };
-    window.__penDebug = () => {
-      if (!dressMesh || !bodyMesh || !dressBind || !dressRestPos) return null;
-      const bp = getMorphedPosArray(bodyMesh);
-      if (!bodyIndexArr) bodyIndexArr = bodyMesh.geometry.index.array;
-      const nrm = computeVertexNormals(bp, bodyIndexArr);
-      const dp = dressMesh.geometry.attributes.position.array;
-      const binds = dressBind.binds;
-      let maxPen = 0, count = 0;
-      const hips = [];
-      for (let i = 0; i < binds.length; i++) {
-        const bi = binds[i], bo = bi * 3, io = i * 3;
-        const nx = nrm[bo], ny = nrm[bo + 1], nz = nrm[bo + 2];
-        const pen = (bp[bo] - dp[io]) * nx + (bp[bo + 1] - dp[io + 1]) * ny + (bp[bo + 2] - dp[io + 2]) * nz;
-        if (pen > maxPen) maxPen = pen;
-        if (pen > 0.002) count++;
-        const y01 = (dressRestPos[io + 1] - 0.48) / (1.39 - 0.48);
-        if (y01 > 0.22 && y01 < 0.5 && pen > 0.001) hips.push({ i, pen: +pen.toFixed(4), dZ: +dp[io + 2].toFixed(4), bZ: +bp[bo + 2].toFixed(4) });
-      }
-      hips.sort((a, b) => b.pen - a.pen);
-      return { maxPen: +maxPen.toFixed(4), count, topHips: hips.slice(0, 10) };
-    };
-    window.__dressDebug = () => {
-      if (!dressMesh || !bodyMesh || !dressBind || !dressRestPos || !bodyRestPos) return { ok: false, why: !dressBind?'bind':!dressRestPos?'drest':!bodyRestPos?'brest':'mesh' };
-      const dp = dressMesh.geometry.attributes.position.array;
-      const bp = getMorphedPosArray(bodyMesh);
-      const infl = bodyMesh.morphTargetInfluences || [];
-      const hipsI = bodyMorph && bodyMorph.hipsIncr;
-      // find back-hip dress vert (mid Y, low Z)
-      let best = 0, bestScore = 1e9;
-      let frontChest = 0, fcScore = -1e9;
-      for (let i = 0; i < dressBind.binds.length; i++) {
-        const y = dressRestPos[i*3+1], z = dressRestPos[i*3+2];
-        const y01 = (y - 0.48) / (1.39 - 0.48);
-        if (y01 > 0.25 && y01 < 0.45 && z < bestScore) { bestScore = z; best = i; }
-        if (y01 > 0.55 && y01 < 0.75 && z > fcScore) { fcScore = z; frontChest = i; }
-      }
-      const pack = (i) => {
-        const bi = dressBind.binds[i];
-        const bo = bi*3, io = i*3;
-        return {
-          i, bi,
-          dressNow: [dp[io], dp[io+1], dp[io+2]],
-          dressRest: [dressRestPos[io], dressRestPos[io+1], dressRestPos[io+2]],
-          bodyNow: [bp[bo], bp[bo+1], bp[bo+2]],
-          bodyRest: [bodyRestPos[bo], bodyRestPos[bo+1], bodyRestPos[bo+2]],
-          bodyDelta: [bp[bo]-bodyRestPos[bo], bp[bo+1]-bodyRestPos[bo+1], bp[bo+2]-bodyRestPos[bo+2]],
-          expected: [
-            dressRestPos[io] + (bp[bo]-bodyRestPos[bo]),
-            dressRestPos[io+1] + (bp[bo+1]-bodyRestPos[bo+1]),
-            dressRestPos[io+2] + (bp[bo+2]-bodyRestPos[bo+2]),
-          ],
-        };
-      };
-      return {
-        ok: true,
-        hipsInfl: hipsI != null ? infl[hipsI] : null,
-        backHip: pack(best),
-        frontChest: pack(frontChest),
-      };
-    };
-    window.__setView = (azimuthDeg) => {
-      const t = controls.target.clone();
-      let dist = camera.position.distanceTo(t);
-      if (!(dist > 0.1)) dist = 2.2;
-      // Keep a mild elevation looking at mid-torso
-      const elev = 0.08;
-      const rad = (Number(azimuthDeg) || 0) * Math.PI / 180;
-      const cosE = Math.cos(elev), sinE = Math.sin(elev);
-      camera.position.set(
-        t.x + dist * cosE * Math.sin(rad),
-        t.y + dist * sinE,
-        t.z + dist * cosE * Math.cos(rad)
-      );
-      camera.lookAt(t);
-      controls.update();
-    };
-    window.__cam = () => ({
-      pos: camera.position.toArray(),
-      target: controls.target.toArray(),
-      az: Math.atan2(camera.position.x - controls.target.x, camera.position.z - controls.target.z) * 180 / Math.PI
-    });
-
-    function pickMorphMesh(model) {
-      let found = null;
-      model.traverse((o) => { if (o.isMesh && o.morphTargetInfluences) found = o; });
-      return found;
-    }
-    function morphDict(mesh, fallbackNames) {
-      let d = { ...(mesh.morphTargetDictionary || {}) };
-      if (!Object.keys(d).length) fallbackNames.forEach((n, i) => { d[n] = i; });
-      return d;
-    }
-
-    const loader = new GLTFLoader();
-    Promise.all([
-      new Promise((res, rej) => loader.load('./body.glb', res, undefined, rej)),
-      new Promise((res, rej) => loader.load('./dress.glb', res, undefined, rej)),
-      fetch('./dress-bind.json').then((r) => { if (!r.ok) throw new Error('dress-bind'); return r.json(); }),
-    ]).then(([bodyGltf, dressGltf, bindJson]) => {
-      dressBind = bindJson;
-      const bodyModel = bodyGltf.scene;
-      bodyMesh = pickMorphMesh(bodyModel);
-      if (bodyMesh) {
-        bodyRestPos = new Float32Array(bodyMesh.geometry.attributes.position.array);
-        bodyMesh.material = new THREE.MeshStandardMaterial({
-          color: 0xc8c2b4, roughness: 0.88, metalness: 0.0, morphTargets: true,
-        });
-        bodyMorph = morphDict(bodyMesh, BODY_MORPHS);
-      }
-      root.add(bodyModel);
-      const dressModel = dressGltf.scene;
-      dressMesh = pickMorphMesh(dressModel);
-      if (dressMesh) {
-        // Позиции пишем напрямую (conform); морфы платья не используем.
-        dressMesh.geometry = dressMesh.geometry.clone();
-        dressRestPos = new Float32Array(dressMesh.geometry.attributes.position.array);
-        // Убрать morphAttributes — иначе шейдер может игнорировать запись в position.
-        dressMesh.geometry.morphAttributes = {};
-        dressMesh.morphTargetInfluences = [];
-        dressMesh.morphTargetDictionary = {};
-        dressMesh.material = new THREE.MeshStandardMaterial({
-          color: 0x5a6b7a, roughness: 0.78, metalness: 0.0,
-          side: THREE.DoubleSide,
-        });
-        dressMorph = {};
-        dressMesh.visible = false;
-        dressMesh.renderOrder = 1;
-        dressMesh.material.polygonOffset = true;
-        dressMesh.material.polygonOffsetFactor = -1;
-        dressMesh.material.polygonOffsetUnits = -1;
-      }
-      root.add(dressModel);
-      root.updateMatrixWorld(true);
-      const box = new THREE.Box3().setFromObject(root);
-      root.position.y -= box.min.y;
-      cameraReady = true;
-      el.status.textContent = 'Крутите фигуру. Настройки — снизу (свайп).';
-      if (window.matchMedia('(min-width: 900px)').matches) sheet.classList.add('expanded');
-      else sheet.classList.remove('expanded');
-      updateLabels();
-      resize();
-      fitCameraToBody();
-    }).catch((err) => {
-      console.error(err);
-      el.status.textContent = 'Не удалось загрузить модели.';
-    });
-
-    let frames = 0, lastFps = performance.now();
-    function animate() {
-      requestAnimationFrame(animate);
-      controls.update();
-      renderer.render(scene, camera);
-      frames++;
-      const now = performance.now();
-      if (now - lastFps >= 500) {
-        el.fps.textContent = 'Кадров в секунду: ' + Math.round((frames * 1000) / (now - lastFps));
-        frames = 0; lastFps = now;
-      }
-    }
-    animate();
-  </script>
+// ---------- test hooks ----------
+window.__setMeasures = (obj) => { for (const k in obj) if (sl[k]) sl[k].value = obj[k]; updateAll(); };
+window.__setProductChart = (chart, label) => setProductChart(chart, label);
+window.__switchFigure = (k) => switchFigure(k);
+window.__getFitText = () => el.peekSize.innerText + ' | ' + el.fitPanel.innerText;
+window.__sizeInfoText = () => el.sizeInfo.innerText;
+window.__vis = (n, on) => root.traverse((o) => { if (o.isMesh && o.name.toLowerCase().includes(n)) o.visible = on; });
+window.__ready = () => !!loaded[figKey] && cameraReady;
+window.__setView = (az, elevDeg = 4) => {
+  fitCameraToBody();
+  const t = controls.target.clone(); const dist = camera.position.distanceTo(t);
+  const r = az * Math.PI / 180, e = elevDeg * Math.PI / 180;
+  camera.position.set(t.x + dist * Math.cos(e) * Math.sin(r), t.y + dist * Math.sin(e), t.z + dist * Math.cos(e) * Math.cos(r));
+  camera.lookAt(t); controls.update();
+};
+window.__zoomFace = () => {
+  const box = new THREE.Box3().setFromObject(root); const top = box.max.y;
+  controls.target.set(0, top - 0.12 * root.scale.y, 0); camera.position.set(0, top - 0.12 * root.scale.y, 0.75); camera.lookAt(controls.target); controls.update();
+};
+</script>
 </body>
 </html>

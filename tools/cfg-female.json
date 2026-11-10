@@ -1,0 +1,82 @@
+{
+ "out": "out/female.glb",
+ "skin": "skins/young_caucasian_female/young_lightskinned_female_diffuse.png",
+ "texsize": 2048,
+ "jpgq": 82,
+ "fabric": [
+  78,
+  78,
+  84
+ ],
+ "regions": [
+  {
+   "y": [
+    1.085,
+    1.235
+   ]
+  },
+  {
+   "y": [
+    1.22,
+    1.47
+   ],
+   "absx": [
+    0.074,
+    0.092
+   ]
+  },
+  {
+   "y": [
+    0.68,
+    0.945
+   ]
+  }
+ ],
+ "proxies": [
+  {
+   "name": "Eyes",
+   "mhclo": "eyes/high-poly/high-poly.mhclo",
+   "tex": "../materials/brown_eye.png",
+   "texsize": 512,
+   "lossless": false
+  },
+  {
+   "name": "Eyebrows",
+   "mhclo": "eyebrows/eyebrow001/eyebrow001.mhclo",
+   "tex": "eyebrow001.png",
+   "texsize": 512,
+   "tint": [
+    58,
+    40,
+    30
+   ],
+   "alpha": 0.85
+  },
+  {
+   "name": "Eyelashes",
+   "mhclo": "eyelashes/eyelashes01/eyelashes01.mhclo",
+   "tex": "eyelashes01.png",
+   "texsize": 512,
+   "tint": [
+    25,
+    18,
+    14
+   ],
+   "alpha": 1.0
+  },
+  {
+   "name": "Hair",
+   "mhclo": "hair/ponytail01/ponytail01.mhclo",
+   "tex": "ponytail01_diffuse.png",
+   "texsize": 1024
+  }
+ ],
+ "regspace": "P0",
+ "nipR": 0.55,
+ "nipIt": 25,
+ "nipV": [
+  8451,
+  1779
+ ],
+ "nipples": true
+}
