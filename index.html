@@ -190,6 +190,14 @@ const GOST_FEMALE = {
   58: { grud: 116, taliya: 98, byodra: 124 }, 60: { grud: 120, taliya: 100, byodra: 128 },
   62: { grud: 124, taliya: 104, byodra: 132 }, 64: { grud: 128, taliya: 108, byodra: 136 },
 };
+/* Мужская сетка 44–70: https://resizes.ru/tablitsa-razmerov-gost/ («Таблица размеров мужской одежды ГОСТ») */
+const GOST_MALE = {
+  44: { grud: 88, taliya: 70, byodra: 92 }, 46: { grud: 92, taliya: 76, byodra: 96 }, 48: { grud: 96, taliya: 82, byodra: 100 },
+  50: { grud: 100, taliya: 88, byodra: 104 }, 52: { grud: 104, taliya: 94, byodra: 108 }, 54: { grud: 108, taliya: 100, byodra: 112 },
+  56: { grud: 112, taliya: 104, byodra: 116 }, 58: { grud: 116, taliya: 108, byodra: 120 }, 60: { grud: 120, taliya: 112, byodra: 124 },
+  62: { grud: 124, taliya: 116, byodra: 128 }, 64: { grud: 128, taliya: 120, byodra: 132 }, 66: { grud: 132, taliya: 124, byodra: 134 },
+  68: { grud: 136, taliya: 128, byodra: 136 }, 70: { grud: 140, taliya: 132, byodra: 140 },
+};
 const EASE_CM = { grud: 2, taliya: 2, zhivot: 4, byodra: 2 };
 const FIT_EPS = 1;
 
@@ -213,6 +221,33 @@ const FIGURES = {
       set('hipsIncr', 'hipsDecr', m.byodra, 100, 84, 136);
     },
     fixup(m, el) { if (m.podgrud > m.grud - 4) { m.podgrud = Math.max(60, m.grud - 4); el.podgrud.value = String(m.podgrud); } },
+  },
+  male: {
+    file: './male.glb', label: 'Парень',
+    chart: GOST_MALE, chartLabel: 'ГОСТ, мужская (resizes.ru)',
+    rostovki: null,
+    sliders: [
+      ['rost', 'Рост, см', 160, 200, 175], ['grud', 'Обхват груди, см', 84, 130, 91],
+      ['taliya', 'Обхват талии, см', 66, 124, 76], ['zhivot', 'Обхват живота, см', 66, 130, 76],
+      ['byodra', 'Обхват бёдер, см', 86, 136, 92],
+    ],
+    bandY: { grud: 1.285, taliya: 1.10, zhivot: 1.05, byodra: 0.90 },
+    // калибровка по замеру сетки (см на единицу морфа): см. tools/male_rest.py
+    morph(m, set, setW) {
+      const B = { grud: 90.7, taliya: 75.5, byodra: 92.2 };
+      const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      const wm = clamp(Math.max((m.taliya - B.taliya) / (m.taliya >= B.taliya ? 11.3 : 5.8), (m.grud - B.grud) / 14), -1, 2);
+      setW('massIncr', Math.max(0, wm)); setW('massDecr', Math.max(0, -wm));
+      const mass = (up, dn) => (wm >= 0 ? wm * up : -wm * dn);
+      const rg = m.grud - (B.grud + mass(-4.5, -0.9));
+      setW('chestIncr', clamp(rg / 8.9, 0, 1.5)); setW('chestDecr', clamp(-rg / 14.4, 0, 1));
+      const rt = m.taliya - (B.taliya + mass(11.3, -5.8));
+      setW('waistIncr', clamp(rt / 10.1, 0, 2)); setW('waistDecr', clamp(-rt / 10.2, 0, 1));
+      const rz = m.zhivot - m.taliya;
+      setW('bellyIncr', clamp(rz / 12.9, 0, 2)); setW('bellyDecr', 0);
+      const rb = m.byodra - (B.byodra + mass(6.6, -5.0));
+      setW('hipsIncr', clamp(rb / 18.5, 0, 2)); setW('hipsDecr', clamp(-rb / 9.2, 0, 1));
+    },
   },
 };
 window.__FIGURES = FIGURES;
@@ -509,11 +544,12 @@ function updateAll() {
     if (ii >= 0) F.w[ii] = Math.max(0, Math.min(1, a));
     if (di >= 0) F.w[di] = Math.max(0, Math.min(1, b));
   };
-  fig.morph(m, set);
+  const setW = (name, w) => { const i = F.names.indexOf(name); if (i >= 0) F.w[i] = w; };
+  fig.morph(m, set, setW);
   applyMorphs(F);
   root.scale.setScalar(m.rost / fig.sliders[0][4]);
   const gost = recommendSize(fig.chart, m);
-  el.sizeInfo.innerHTML = 'Размер РФ: ' + gost.size + (gost.outside ? ' (больше нет в сетке)' : '') + '<br />Ростовка: ' + rostovkaLabel(m.rost);
+  el.sizeInfo.innerHTML = 'Размер РФ: ' + gost.size + (gost.outside ? ' (больше нет в сетке)' : '') + '<br />' + (fig.rostovki ? 'Ростовка: ' + rostovkaLabel(m.rost) : 'Рост: ' + m.rost + ' см');
   updateFit(m);
   requestAnimationFrame(() => fitCameraToBody());
 }

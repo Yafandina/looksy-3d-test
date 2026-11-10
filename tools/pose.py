@@ -2,7 +2,11 @@ import json,numpy as np,sys
 from scipy.spatial import cKDTree
 sys.path.insert(0,'.'); import glbio
 MB='/tmp/mh-build/'
-P0,N0,I0,T0,names=glbio.load('/tmp/looksy-pages-publish/body.glb')
+import os
+if os.environ.get('POSE_IN'):
+  _d=np.load(os.environ['POSE_IN']); P0=_d['P']; T0=list(_d['T']); I0=_d['I']
+else:
+  P0,N0,I0,T0,names=glbio.load('body_src.glb')
 V=np.array([list(map(float,l.split()[1:4])) for l in open(MB+'base.obj') if l.startswith('v ')])
 B=V[:13380]
 rig=json.load(open(MB+'rig.default.json')); W=json.load(open(MB+'weights.default.json'))['weights']
@@ -99,5 +103,5 @@ if __name__=='__main__':
   a,gap=solve(); print('knee a',a,'gap',gap)
   M=build(make(a)); Pn,Tn=skin(M,P0,T0)
   Pn[:,1]-=Pn[:,1].min()
-  np.savez('posed.npz',P=Pn,T=np.array(Tn),I=I0)
+  np.savez(os.environ.get('POSE_OUT','posed.npz'),P=Pn,T=np.array(Tn),I=I0)
   print(Pn.min(0),Pn.max(0))

@@ -1,0 +1,11 @@
+{"out":"out/male.glb","posed":"posed_male.npz","regsrc":"male_rest.npz","regspace":"P0",
+ "names":["chestIncr","chestDecr","waistIncr","waistDecr","bellyIncr","bellyDecr","hipsIncr","hipsDecr","massIncr","massDecr"],
+ "skin":"skins/young_caucasian_male/young_lightskinned_male_diffuse.png","texsize":2048,"jpgq":82,"nipples":false,
+ "fabric":[62,64,72],
+ "regions":[{"y":[0.73,1.035]}],
+ "proxies":[
+  {"name":"Eyes","mhclo":"eyes/high-poly/high-poly.mhclo","tex":"../materials/brown_eye.png","texsize":512},
+  {"name":"Eyebrows","mhclo":"eyebrows/eyebrow001/eyebrow001.mhclo","tex":"eyebrow001.png","texsize":512,"tint":[48,34,26],"alpha":0.95},
+  {"name":"Eyelashes","mhclo":"eyelashes/eyelashes01/eyelashes01.mhclo","tex":"eyelashes01.png","texsize":512,"tint":[25,18,14],"alpha":0.8},
+  {"name":"Hair","mhclo":"hair/short02/short02.mhclo","tex":"short02_diffuse.png","texsize":1024}
+ ]}

@@ -6,7 +6,7 @@ import pygltflib as g
 MB='/tmp/mh-build/'; SA='/tmp/mhassets/sys/'
 cfg=json.load(open(sys.argv[1])) if len(sys.argv)>1 else {}
 OUT=cfg.get('out','out/body.glb')
-d=np.load('posed.npz'); P=d['P']; T=list(d['T']); names=['breastIncr','breastDecr','underbustIncr','underbustDecr','waistIncr','waistDecr','bellyIncr','bellyDecr','hipsIncr','hipsDecr']
+d=np.load(cfg.get('posed','posed.npz')); P=d['P']; T=list(d['T']); names=cfg.get('names',['breastIncr','breastDecr','underbustIncr','underbustDecr','waistIncr','waistDecr','bellyIncr','bellyDecr','hipsIncr','hipsDecr'])
 V,VT,faces=objio.read_obj(MB+'base.obj','body')
 B=V[:13380]
 W=json.load(open(MB+'weights.default.json'))['weights']
@@ -83,7 +83,7 @@ for b in W:
   if any(k in b for k in ('upperleg','lowerleg','foot','toe')):
     for vi,ww in W[b]:
       if vi<13380: legw[vi]+=ww
-REG=glbio.load('/tmp/looksy-pages-publish/body.glb')[0] if cfg.get('regspace')=='P0' else B
+REG=(np.load(cfg['regsrc'])['P'] if cfg.get('regsrc') else glbio.load('body_src.glb')[0]) if cfg.get('regspace')=='P0' else B
 attr=np.concatenate([REG[vidx],armw[vidx,None]],1)
 R=rasterize(attr)
 X,Y,Zc,AW=R[...,0],R[...,1],R[...,2],R[...,3]
